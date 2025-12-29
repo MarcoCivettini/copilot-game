@@ -1,0 +1,19 @@
+<div class="character-select-container">
+  <h2>Seleziona il tuo personaggio</h2>
+  <form (ngSubmit)="joinLobby()">
+    <input type="text" [(ngModel)]="playerName" name="playerName" placeholder="Nome giocatore" required />
+    <div class="weapon-select">
+      <label>
+        <input type="radio" [(ngModel)]="weapon" name="weapon" value="sword" /> Spada
+      </label>
+      <label>
+        <input type="radio" [(ngModel)]="weapon" name="weapon" value="spear" /> Lancia
+      </label>
+      <label>
+        <input type="radio" [(ngModel)]="weapon" name="weapon" value="bow" /> Arco
+      </label>
+    </div>
+    <button type="submit">Entra in lobby</button>
+    <div class="error" *ngIf="error">{{ error }}</div>
+  </form>
+</div>

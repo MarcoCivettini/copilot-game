@@ -1,0 +1,38 @@
+<div class="lobby-container">
+  <h2>🎮 Lobby di Gioco</h2>
+  
+  <div class="room-info">
+    <div class="room-id">🔑 Room ID: <strong>{{ roomId }}</strong></div>
+    <div class="player-count">👥 Giocatori: <strong>{{ players.length }}</strong>/16</div>
+  </div>
+
+  <div class="players-section">
+    <h3>Giocatori nella lobby:</h3>
+    <ul class="player-list" *ngIf="players.length > 0">
+      <li *ngFor="let player of players; let i = index" class="player-item">
+        <span class="player-number">{{ i + 1 }}.</span>
+        <span class="player-name">{{ player.name }}</span>
+        <span class="weapon" [ngClass]="'weapon-' + player.weaponType.toLowerCase()">
+          {{ getWeaponIcon(player.weaponType) }} {{ player.weaponType }}
+        </span>
+        <span class="ready-badge" *ngIf="player.isReady">✓</span>
+      </li>
+    </ul>
+    <div class="no-players" *ngIf="players.length === 0">
+      <p>⏳ In attesa di giocatori...</p>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="start-btn" *ngIf="isOwner && players.length >= 1" (click)="startGame()">
+      🚀 AVVIA PARTITA
+    </button>
+    <button class="back-btn" (click)="leaveLobby()">
+      ⬅️ INDIETRO
+    </button>
+  </div>
+
+  <div class="info-text" *ngIf="players.length < 1">
+    <small>Servono almeno 1 giocatore per iniziare</small>
+  </div>
+</div>
