@@ -8,6 +8,7 @@ interface PlayerMesh {
   mesh: THREE.Group;
   nameLabel: THREE.Sprite;
   healthBar: THREE.Mesh;
+  targetRotation: number; // Rotazione target per interpolazione smooth
 }
 
 interface PlayerData {
@@ -165,6 +166,7 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
 
     let moved = false;
     const newPosition = this.myPlayer.position.clone();
+    const oldPosition = this.myPlayer.position.clone();
 
     if (this.keys.w) {
       newPosition.z -= this.moveSpeed;
@@ -188,13 +190,31 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
     if (distance <= this.MAP_RADIUS - 1) {
       this.myPlayer.position.copy(newPosition);
       
-      // Invia la posizione al server
+      // Calcola rotazione basata sulla direzione del movimento
       if (moved) {
-        room.send('playerMove', {
-          x: newPosition.x,
-          z: newPosition.z,
-          rotation: 0
-        });
+        const dx = newPosition.x - oldPosition.x;
+        const dz = newPosition.z - oldPosition.z;
+        
+        // Calcola l'angolo solo se c'è effettivamente movimento
+        if (Math.abs(dx) > 0.001 || Math.abs(dz) > 0.001) {
+          // In ThreeJS, rotation.y = 0 significa che l'oggetto guarda verso -Z
+          // Usiamo atan2 per calcolare l'angolo corretto
+          // atan2(x, z) ci dà l'angolo rispetto all'asse Z
+          const rotation = Math.atan2(dx, dz);
+          
+          // Trova il player mesh e imposta la target rotation per interpolazione smooth
+          const myPlayerMesh = this.playerMeshes.get(this.myPlayerId);
+          if (myPlayerMesh) {
+            myPlayerMesh.targetRotation = rotation;
+          }
+          
+          // Invia posizione e rotazione al server
+          room.send('playerMove', {
+            x: newPosition.x,
+            z: newPosition.z,
+            rotation: rotation
+          });
+        }
       }
     }
   }
@@ -229,6 +249,11 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
         playerData.position.y || 1, 
         playerData.position.z
       );
+      
+      // Imposta target rotation per interpolazione smooth
+      if (playerData.rotation !== undefined) {
+        playerMesh.targetRotation = playerData.rotation;
+      }
     }
 
     // Aggiorna barra vita
@@ -291,7 +316,12 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
 
     this.scene.add(group);
 
-    return { mesh: group, nameLabel, healthBar };
+    return { 
+      mesh: group, 
+      nameLabel, 
+      healthBar,
+      targetRotation: playerData.rotation || 0
+    };
   }
 
   private updateHealthBar(playerMesh: PlayerMesh, healthPercent: number) {
@@ -391,6 +421,11 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
     // Aggiorna movimento del giocatore
     this.updatePlayerMovement();
     
+    // Interpola rotazione di tutti i player meshes
+    this.playerMeshes.forEach((playerMesh) => {
+      this.interpolateRotation(playerMesh);
+    });
+    
     // Aggiorna camera per seguire il giocatore
     if (this.myPlayer) {
       this.camera.position.x = this.myPlayer.position.x;
@@ -400,6 +435,43 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
     
     this.renderer.render(this.scene, this.camera);
   };
+
+  /**
+   * Interpola smoothly la rotazione del mesh verso la targetRotation
+   * usando sempre il percorso più breve
+   */
+  private interpolateRotation(playerMesh: PlayerMesh): void {
+    const currentRotation = playerMesh.mesh.rotation.y;
+    const targetRotation = playerMesh.targetRotation;
+    
+    // Calcola la differenza usando la funzione helper per il percorso più breve
+    const delta = this.getShortestAngleDelta(currentRotation, targetRotation);
+    
+    // Interpolazione lineare con fattore di smoothing (0.15 = smooth, 1.0 = istantaneo)
+    const lerpFactor = 0.15;
+    const newRotation = currentRotation + delta * lerpFactor;
+    
+    playerMesh.mesh.rotation.y = newRotation;
+  }
+
+  /**
+   * Calcola la differenza più breve tra due angoli.
+   * Ritorna un valore nell'intervallo [-π, π] che rappresenta
+   * la rotazione più breve per andare da 'from' a 'to'.
+   */
+  private getShortestAngleDelta(from: number, to: number): number {
+    let delta = to - from;
+    
+    // Normalizza nell'intervallo [-π, π] per ottenere il percorso più breve
+    delta = ((delta + Math.PI) % (Math.PI * 2)) - Math.PI;
+    
+    // Gestisce il caso in cui il modulo restituisce un numero negativo
+    if (delta < -Math.PI) {
+      delta += Math.PI * 2;
+    }
+    
+    return delta;
+  }
 
   ngOnDestroy() {
     if (this.animationId) {
