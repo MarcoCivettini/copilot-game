@@ -2,25 +2,11 @@ import { Component, OnInit, OnDestroy, ElementRef, ViewChild, AfterViewInit } fr
 import { Router } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { ColyseusService } from '../services/colyseus.service';
+import { ThreeJsSceneService } from '../services/threejs-scene.service';
+import { PlayerMeshService, PlayerData, PlayerMesh } from '../services/player-mesh.service';
+import { InputService } from '../services/input.service';
+import { CameraService } from '../services/camera.service';
 import * as THREE from 'three';
-
-interface PlayerMesh {
-  mesh: THREE.Group;
-  nameLabel: THREE.Sprite;
-  healthBar: THREE.Mesh;
-  targetRotation: number; // Rotazione target per interpolazione smooth
-}
-
-interface PlayerData {
-  sessionId: string;
-  name: string;
-  weaponType: 'SWORD' | 'SPEAR' | 'BOW';
-  position: { x: number; y: number; z: number };
-  rotation: number;
-  hp: number;
-  maxHp: number;
-  isAlive: boolean;
-}
 
 @Component({
   selector: 'app-battle',
@@ -53,25 +39,14 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
   private playerMeshes = new Map<string, PlayerMesh>();
   private myPlayer?: THREE.Group;
 
-  // Controlli
-  private keys = {
-    w: false,
-    a: false,
-    s: false,
-    d: false,
-    space: false
-  };
-
-  private moveSpeed = 0.2;
-  private readonly MAP_RADIUS = 30;
-  
-  // Camera in terza persona
-  private cameraOffset = new THREE.Vector3(0, 12, 20); // Offset: sopra e dietro (invertito sull'asse Z)
-  private cameraLookAtOffset = new THREE.Vector3(0, 1, 0); // Punto di osservazione (leggermente sopra i piedi)
-  private playerRotation = 0; // Rotazione del personaggio in radianti
-  private cameraRotation = 0; // Rotazione corrente della camera per interpolazione smooth
-
-  constructor(private colyseus: ColyseusService, private router: Router) {}
+  constructor(
+    private colyseus: ColyseusService,
+    private router: Router,
+    private sceneService: ThreeJsSceneService,
+    private playerMeshService: PlayerMeshService,
+    private inputService: InputService,
+    private cameraService: CameraService
+  ) {}
 
   ngOnInit() {
     const room = this.colyseus.getRoom();
@@ -108,7 +83,7 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
       const currentPlayerIds = new Set(data.players.map(p => p.sessionId));
       this.playerMeshes.forEach((mesh, sessionId) => {
         if (!currentPlayerIds.has(sessionId)) {
-          this.removePlayerFromScene(sessionId);
+          this.playerMeshService.removePlayerFromScene(sessionId, this.playerMeshes, this.scene);
         }
       });
     });
@@ -122,7 +97,7 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
     // Ascolta eliminazioni
     room.onMessage('playerEliminated', (data: { playerId: string, killerId: string }) => {
       console.log('[BattlePage] Player eliminated:', data);
-      this.removePlayerFromScene(data.playerId);
+      this.playerMeshService.removePlayerFromScene(data.playerId, this.playerMeshes, this.scene);
     });
 
     // Ascolta fine partita
@@ -132,112 +107,27 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
       setTimeout(() => this.router.navigate(['/']), 10000);
     });
 
-    // Setup controlli tastiera
-    this.setupKeyboardControls();
+    // Setup controlli tastiera usando InputService
+    this.inputService.setupKeyboardControls(() => this.attack());
   }
 
   ngAfterViewInit() {
-    this.initThreeJS();
+    const container = document.getElementById('threejs-canvas');
+    if (!container) return;
+
+    // Inizializza scena usando SceneService
+    const sceneSetup = this.sceneService.initScene(container);
+    this.scene = sceneSetup.scene;
+    this.camera = sceneSetup.camera;
+    this.renderer = sceneSetup.renderer;
+
     this.animate();
-  }
-
-  private setupKeyboardControls() {
-    window.addEventListener('keydown', (e) => {
-      const key = e.key.toLowerCase();
-      if (key === 'w') this.keys.w = true;
-      if (key === 'a') this.keys.a = true;
-      if (key === 's') this.keys.s = true;
-      if (key === 'd') this.keys.d = true;
-      if (key === ' ') {
-        this.keys.space = true;
-        this.attack();
-      }
-    });
-
-    window.addEventListener('keyup', (e) => {
-      const key = e.key.toLowerCase();
-      if (key === 'w') this.keys.w = false;
-      if (key === 'a') this.keys.a = false;
-      if (key === 's') this.keys.s = false;
-      if (key === 'd') this.keys.d = false;
-      if (key === ' ') this.keys.space = false;
-    });
-  }
-
-  private updatePlayerMovement() {
-    if (!this.myPlayer) return;
-
-    const room = this.colyseus.getRoom();
-    if (!room) return;
-
-    let moved = false;
-    const newPosition = this.myPlayer.position.clone();
-    const oldPosition = this.myPlayer.position.clone();
-    const movementVector = new THREE.Vector3(0, 0, 0);
-
-    if (this.keys.w) {
-      movementVector.z -= this.moveSpeed;
-      moved = true;
-    }
-    if (this.keys.s) {
-      movementVector.z += this.moveSpeed;
-      moved = true;
-    }
-    if (this.keys.a) {
-      movementVector.x -= this.moveSpeed;
-      moved = true;
-    }
-    if (this.keys.d) {
-      movementVector.x += this.moveSpeed;
-      moved = true;
-    }
-
-    if (moved) {
-      // Applica movimento
-      newPosition.add(movementVector);
-    }
-
-    // Verifica che il giocatore rimanga dentro il cerchio
-    const distance = Math.sqrt(newPosition.x ** 2 + newPosition.z ** 2);
-    if (distance <= this.MAP_RADIUS - 1) {
-      this.myPlayer.position.copy(newPosition);
-      
-      // Calcola rotazione basata sulla direzione del movimento
-      if (moved) {
-        const dx = newPosition.x - oldPosition.x;
-        const dz = newPosition.z - oldPosition.z;
-        
-        // Calcola l'angolo solo se c'è effettivamente movimento
-        if (Math.abs(dx) > 0.001 || Math.abs(dz) > 0.001) {
-          // In ThreeJS, rotation.y = 0 significa che l'oggetto guarda verso -Z
-          // Usiamo atan2 per calcolare l'angolo corretto
-          // atan2(x, z) ci dà l'angolo rispetto all'asse Z
-          const rotation = Math.atan2(dx, dz);
-          this.playerRotation = rotation;
-          
-          // Trova il player mesh e imposta la target rotation per interpolazione smooth
-          const myPlayerMesh = this.playerMeshes.get(this.myPlayerId);
-          if (myPlayerMesh) {
-            myPlayerMesh.targetRotation = rotation;
-          }
-          
-          // Invia posizione e rotazione al server
-          room.send('playerMove', {
-            x: newPosition.x,
-            z: newPosition.z,
-            rotation: rotation
-          });
-        }
-      }
-    }
   }
 
   private attack() {
     const room = this.colyseus.getRoom();
     if (room) {
-      room.send('playerAttack', {
-        timestamp: Date.now()
-      });
+      room.send('playerAttack', { timestamp: Date.now() });
       console.log('[BattlePage] Attack sent!');
     }
   }
@@ -245,17 +135,23 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
   private updatePlayerInScene(sessionId: string, playerData: PlayerData) {
     let playerMesh = this.playerMeshes.get(sessionId);
 
-    // Se il giocatore non esiste ancora nella scena, crealo
+    // Se il giocatore non esiste ancora, crealo usando PlayerMeshService
     if (!playerMesh) {
-      playerMesh = this.createPlayerMesh(sessionId, playerData);
+      const isMyPlayer = sessionId === this.myPlayerId;
+      playerMesh = this.playerMeshService.createPlayerMesh(
+        sessionId,
+        playerData,
+        isMyPlayer,
+        this.scene
+      );
       this.playerMeshes.set(sessionId, playerMesh);
       
-      if (sessionId === this.myPlayerId) {
+      if (isMyPlayer) {
         this.myPlayer = playerMesh.mesh;
       }
     }
 
-    // Aggiorna posizione solo se non è il mio giocatore (il mio si muove con i tasti)
+    // Aggiorna posizione solo se non è il mio giocatore
     if (sessionId !== this.myPlayerId && playerData.position) {
       playerMesh.mesh.position.set(
         playerData.position.x, 
@@ -263,270 +159,57 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
         playerData.position.z
       );
       
-      // Imposta target rotation per interpolazione smooth
       if (playerData.rotation !== undefined) {
         playerMesh.targetRotation = playerData.rotation;
       }
     }
 
-    // Aggiorna barra vita
+    // Aggiorna barra vita usando PlayerMeshService
     if (playerData.hp !== undefined && playerData.maxHp !== undefined) {
-      this.updateHealthBar(playerMesh, playerData.hp / playerData.maxHp);
+      this.playerMeshService.updateHealthBar(playerMesh, playerData.hp / playerData.maxHp);
     }
-  }
-
-  private createPlayerMesh(sessionId: string, playerData: PlayerData): PlayerMesh {
-    const group = new THREE.Group();
-
-    // Corpo del giocatore (cubo)
-    const bodyGeometry = new THREE.BoxGeometry(0.8, 1.8, 0.8);
-    const isMyPlayer = sessionId === this.myPlayerId;
-    const bodyMaterial = new THREE.MeshStandardMaterial({ 
-      color: isMyPlayer ? 0x0066ff : 0xff6600
-    });
-    const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
-    body.position.y = 0.9;
-    body.castShadow = true;
-    group.add(body);
-
-    // Arma (placeholder - cubo piccolo)
-    const weaponGeometry = new THREE.BoxGeometry(0.2, 0.8, 0.2);
-    const weaponMaterial = new THREE.MeshStandardMaterial({ color: 0xcccccc });
-    const weapon = new THREE.Mesh(weaponGeometry, weaponMaterial);
-    weapon.position.set(0.5, 0.9, 0);
-    group.add(weapon);
-
-    // Barra vita
-    const healthBarGeometry = new THREE.PlaneGeometry(1, 0.1);
-    const healthBarMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
-    const healthBar = new THREE.Mesh(healthBarGeometry, healthBarMaterial);
-    healthBar.position.set(0, 2.5, 0);
-    group.add(healthBar);
-
-    // Nome giocatore (sprite)
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d')!;
-    canvas.width = 256;
-    canvas.height = 64;
-    context.fillStyle = 'white';
-    context.font = '24px Arial';
-    context.textAlign = 'center';
-    context.fillText(playerData.name || 'Player', 128, 32);
-    
-    const texture = new THREE.CanvasTexture(canvas);
-    const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
-    const nameLabel = new THREE.Sprite(spriteMaterial);
-    nameLabel.position.set(0, 3, 0);
-    nameLabel.scale.set(2, 0.5, 1);
-    group.add(nameLabel);
-
-    // Posizione iniziale
-    group.position.set(
-      playerData.position?.x || 0,
-      playerData.position?.y || 1,
-      playerData.position?.z || 0
-    );
-
-    this.scene.add(group);
-
-    return { 
-      mesh: group, 
-      nameLabel, 
-      healthBar,
-      targetRotation: playerData.rotation || 0
-    };
-  }
-
-  private updateHealthBar(playerMesh: PlayerMesh, healthPercent: number) {
-    playerMesh.healthBar.scale.x = healthPercent;
-    
-    // Cambia colore da verde a rosso
-    const color = healthPercent > 0.5 ? 0x00ff00 : 0xff0000;
-    (playerMesh.healthBar.material as THREE.MeshBasicMaterial).color.setHex(color);
-  }
-
-  private removePlayerFromScene(sessionId: string) {
-    const playerMesh = this.playerMeshes.get(sessionId);
-    if (playerMesh) {
-      this.scene.remove(playerMesh.mesh);
-      this.playerMeshes.delete(sessionId);
-    }
-  }
-
-  private initThreeJS() {
-    // Scena
-    this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x87ceeb); // Cielo azzurro
-
-    // Camera
-    const container = document.getElementById('threejs-canvas');
-    if (!container) return;
-    
-    const width = container.clientWidth;
-    const height = container.clientHeight;
-    
-    this.camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
-    this.camera.position.set(0, 20, 40);
-    this.camera.lookAt(0, 0, 0);
-
-    // Renderer
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
-    this.renderer.setSize(width, height);
-    this.renderer.shadowMap.enabled = true;
-    container.appendChild(this.renderer.domElement);
-
-    // Luce ambientale
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-    this.scene.add(ambientLight);
-
-    // Luce direzionale con ombre
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    directionalLight.position.set(10, 20, 10);
-    directionalLight.castShadow = true;
-    directionalLight.shadow.camera.left = -50;
-    directionalLight.shadow.camera.right = 50;
-    directionalLight.shadow.camera.top = 50;
-    directionalLight.shadow.camera.bottom = -50;
-    this.scene.add(directionalLight);
-
-    // Mappa circolare (raggio 30)
-    const mapGeometry = new THREE.CircleGeometry(this.MAP_RADIUS, 64);
-    const mapMaterial = new THREE.MeshStandardMaterial({ 
-      color: 0x6ab04c,
-      roughness: 0.8,
-      metalness: 0.2
-    });
-    const map = new THREE.Mesh(mapGeometry, mapMaterial);
-    map.rotation.x = -Math.PI / 2;
-    map.receiveShadow = true;
-    this.scene.add(map);
-
-    // Bordo del cerchio
-    const edgeGeometry = new THREE.RingGeometry(this.MAP_RADIUS - 0.5, this.MAP_RADIUS, 64);
-    const edgeMaterial = new THREE.MeshBasicMaterial({ 
-      color: 0xff0000,
-      side: THREE.DoubleSide
-    });
-    const edge = new THREE.Mesh(edgeGeometry, edgeMaterial);
-    edge.rotation.x = -Math.PI / 2;
-    edge.position.y = 0.1;
-    this.scene.add(edge);
-
-    // Handle resize
-    window.addEventListener('resize', this.onWindowResize.bind(this));
-  }
-
-  private onWindowResize() {
-    const container = document.getElementById('threejs-canvas');
-    if (!container) return;
-
-    const width = container.clientWidth;
-    const height = container.clientHeight;
-
-    this.camera.aspect = width / height;
-    this.camera.updateProjectionMatrix();
-    this.renderer.setSize(width, height);
   }
 
   private animate = () => {
     this.animationId = requestAnimationFrame(this.animate);
     
-    // Aggiorna movimento del giocatore
-    this.updatePlayerMovement();
+    // Aggiorna movimento del giocatore usando InputService
+    if (this.myPlayer) {
+      const rotation = this.inputService.updatePlayerMovement(
+        this.myPlayer,
+        this.colyseus.getRoom()
+      );
+
+      // Se c'è stata rotazione, aggiorna il target rotation del mesh
+      if (rotation !== null) {
+        const myPlayerMesh = this.playerMeshes.get(this.myPlayerId);
+        if (myPlayerMesh) {
+          myPlayerMesh.targetRotation = rotation;
+        }
+      }
+    }
     
-    // Interpola rotazione di tutti i player meshes
+    // Interpola rotazione e aggiorna billboards per tutti i player
     this.playerMeshes.forEach((playerMesh) => {
-      this.interpolateRotation(playerMesh);
-      // Orienta la barra vita e il nome verso la camera (billboard effect)
-      this.updateBillboards(playerMesh);
+      this.playerMeshService.interpolateRotation(playerMesh);
+      this.playerMeshService.updateBillboards(playerMesh, this.camera);
     });
     
-    // Aggiorna camera in terza persona per seguire il giocatore
+    // Aggiorna camera usando CameraService
     if (this.myPlayer) {
-      this.updateThirdPersonCamera();
+      this.cameraService.updateThirdPersonCamera(this.camera, this.myPlayer);
     }
     
     this.renderer.render(this.scene, this.camera);
   };
-
-  /**
-   * Interpola smoothly la rotazione del mesh verso la targetRotation
-   * usando sempre il percorso più breve
-   */
-  private interpolateRotation(playerMesh: PlayerMesh): void {
-    const currentRotation = playerMesh.mesh.rotation.y;
-    const targetRotation = playerMesh.targetRotation;
-    
-    // Calcola la differenza usando la funzione helper per il percorso più breve
-    const delta = this.getShortestAngleDelta(currentRotation, targetRotation);
-    
-    // Interpolazione lineare con fattore di smoothing (0.15 = smooth, 1.0 = istantaneo)
-    const lerpFactor = 0.15;
-    const newRotation = currentRotation + delta * lerpFactor;
-    
-    playerMesh.mesh.rotation.y = newRotation;
-  }
-
-  /**
-   * Calcola la differenza più breve tra due angoli.
-   * Ritorna un valore nell'intervallo [-π, π] che rappresenta
-   * la rotazione più breve per andare da 'from' a 'to'.
-   */
-  private getShortestAngleDelta(from: number, to: number): number {
-    let delta = to - from;
-    
-    // Normalizza nell'intervallo [-π, π] per ottenere il percorso più breve
-    delta = ((delta + Math.PI) % (Math.PI * 2)) - Math.PI;
-    
-    // Gestisce il caso in cui il modulo restituisce un numero negativo
-    if (delta < -Math.PI) {
-      delta += Math.PI * 2;
-    }
-    
-    return delta;
-  }
-
-  /**
-   * Aggiorna barra vita e nome del giocatore per orientarli sempre verso la camera (billboard effect)
-   */
-  private updateBillboards(playerMesh: PlayerMesh): void {
-    // La barra vita deve guardare sempre verso la camera
-    playerMesh.healthBar.lookAt(this.camera.position);
-    
-    // Il nome (sprite) guarda automaticamente verso la camera essendo uno Sprite,
-    // ma possiamo forzarlo per sicurezza
-    playerMesh.nameLabel.lookAt(this.camera.position);
-  }
-
-  /**
-   * Aggiorna la posizione della camera in terza persona
-   * La camera segue il personaggio da dietro e sopra, con orientamento fisso
-   */
-  private updateThirdPersonCamera() {
-    if (!this.myPlayer) return;
-
-    // Camera in terza persona classica: posizione fissa dietro al personaggio
-    // NON ruota con il personaggio, mantiene un punto di vista stabile
-    const targetCameraPosition = new THREE.Vector3();
-    targetCameraPosition.copy(this.myPlayer.position).add(this.cameraOffset);
-
-    // Smooth camera movement molto dolce per evitare scatti
-    this.camera.position.lerp(targetCameraPosition, 0.08);
-
-    // La camera guarda sempre il personaggio (leggermente sopra)
-    const lookAtPosition = this.myPlayer.position.clone().add(this.cameraLookAtOffset);
-    this.camera.lookAt(lookAtPosition);
-  }
 
   ngOnDestroy() {
     if (this.animationId) {
       cancelAnimationFrame(this.animationId);
     }
     if (this.renderer) {
-      this.renderer.dispose();
+      this.sceneService.disposeRenderer(this.renderer);
     }
-    window.removeEventListener('resize', this.onWindowResize.bind(this));
-    window.removeEventListener('keydown', () => {});
-    window.removeEventListener('keyup', () => {});
+    this.inputService.cleanup();
   }
 }
