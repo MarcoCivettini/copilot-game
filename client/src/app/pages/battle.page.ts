@@ -64,6 +64,12 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
 
   private moveSpeed = 0.2;
   private readonly MAP_RADIUS = 30;
+  
+  // Camera in terza persona
+  private cameraOffset = new THREE.Vector3(0, 12, 20); // Offset: sopra e dietro (invertito sull'asse Z)
+  private cameraLookAtOffset = new THREE.Vector3(0, 1, 0); // Punto di osservazione (leggermente sopra i piedi)
+  private playerRotation = 0; // Rotazione del personaggio in radianti
+  private cameraRotation = 0; // Rotazione corrente della camera per interpolazione smooth
 
   constructor(private colyseus: ColyseusService, private router: Router) {}
 
@@ -167,22 +173,28 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
     let moved = false;
     const newPosition = this.myPlayer.position.clone();
     const oldPosition = this.myPlayer.position.clone();
+    const movementVector = new THREE.Vector3(0, 0, 0);
 
     if (this.keys.w) {
-      newPosition.z -= this.moveSpeed;
+      movementVector.z -= this.moveSpeed;
       moved = true;
     }
     if (this.keys.s) {
-      newPosition.z += this.moveSpeed;
+      movementVector.z += this.moveSpeed;
       moved = true;
     }
     if (this.keys.a) {
-      newPosition.x -= this.moveSpeed;
+      movementVector.x -= this.moveSpeed;
       moved = true;
     }
     if (this.keys.d) {
-      newPosition.x += this.moveSpeed;
+      movementVector.x += this.moveSpeed;
       moved = true;
+    }
+
+    if (moved) {
+      // Applica movimento
+      newPosition.add(movementVector);
     }
 
     // Verifica che il giocatore rimanga dentro il cerchio
@@ -201,6 +213,7 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
           // Usiamo atan2 per calcolare l'angolo corretto
           // atan2(x, z) ci dà l'angolo rispetto all'asse Z
           const rotation = Math.atan2(dx, dz);
+          this.playerRotation = rotation;
           
           // Trova il player mesh e imposta la target rotation per interpolazione smooth
           const myPlayerMesh = this.playerMeshes.get(this.myPlayerId);
@@ -424,13 +437,13 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
     // Interpola rotazione di tutti i player meshes
     this.playerMeshes.forEach((playerMesh) => {
       this.interpolateRotation(playerMesh);
+      // Orienta la barra vita e il nome verso la camera (billboard effect)
+      this.updateBillboards(playerMesh);
     });
     
-    // Aggiorna camera per seguire il giocatore
+    // Aggiorna camera in terza persona per seguire il giocatore
     if (this.myPlayer) {
-      this.camera.position.x = this.myPlayer.position.x;
-      this.camera.position.z = this.myPlayer.position.z + 15;
-      this.camera.lookAt(this.myPlayer.position);
+      this.updateThirdPersonCamera();
     }
     
     this.renderer.render(this.scene, this.camera);
@@ -471,6 +484,38 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
     }
     
     return delta;
+  }
+
+  /**
+   * Aggiorna barra vita e nome del giocatore per orientarli sempre verso la camera (billboard effect)
+   */
+  private updateBillboards(playerMesh: PlayerMesh): void {
+    // La barra vita deve guardare sempre verso la camera
+    playerMesh.healthBar.lookAt(this.camera.position);
+    
+    // Il nome (sprite) guarda automaticamente verso la camera essendo uno Sprite,
+    // ma possiamo forzarlo per sicurezza
+    playerMesh.nameLabel.lookAt(this.camera.position);
+  }
+
+  /**
+   * Aggiorna la posizione della camera in terza persona
+   * La camera segue il personaggio da dietro e sopra, con orientamento fisso
+   */
+  private updateThirdPersonCamera() {
+    if (!this.myPlayer) return;
+
+    // Camera in terza persona classica: posizione fissa dietro al personaggio
+    // NON ruota con il personaggio, mantiene un punto di vista stabile
+    const targetCameraPosition = new THREE.Vector3();
+    targetCameraPosition.copy(this.myPlayer.position).add(this.cameraOffset);
+
+    // Smooth camera movement molto dolce per evitare scatti
+    this.camera.position.lerp(targetCameraPosition, 0.08);
+
+    // La camera guarda sempre il personaggio (leggermente sopra)
+    const lookAtPosition = this.myPlayer.position.clone().add(this.cameraLookAtOffset);
+    this.camera.lookAt(lookAtPosition);
   }
 
   ngOnDestroy() {
