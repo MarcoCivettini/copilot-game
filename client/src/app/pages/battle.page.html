@@ -1,10 +1,35 @@
 <div class="battle-container">
-  <h2>Battle Royale</h2>
-  <div *ngIf="isGameOver" class="game-over">
-    <h3>Game Over!</h3>
-    <p>Vincitore: {{ winner }}</p>
-    <p>Ritorno alla home tra 10 secondi...</p>
+  <!-- HUD overlay -->
+  <div class="hud-overlay" *ngIf="!isGameOver">
+    <div class="hud-top">
+      <div class="player-info">
+        <div class="health-bar-container">
+          <div class="health-bar" [style.width.%]="(myHealth / myMaxHealth) * 100"></div>
+        </div>
+        <div class="health-text">❤️ {{ myHealth }} / {{ myMaxHealth }}</div>
+      </div>
+      <div class="players-alive">
+        👥 Giocatori vivi: {{ playersAlive }} / {{ totalPlayers }}
+      </div>
+    </div>
+    
+    <div class="hud-controls">
+      <div class="control-hint">🎮 WASD - Movimento | SPAZIO - Attacco</div>
+    </div>
   </div>
+
+  <!-- Game over overlay -->
+  <div class="game-over-overlay" *ngIf="isGameOver">
+    <div class="game-over-content">
+      <h1>🏆 PARTITA TERMINATA!</h1>
+      <div class="winner-info">
+        <p class="winner-label">Vincitore:</p>
+        <p class="winner-name">{{ winner || 'Sconosciuto' }}</p>
+      </div>
+      <p class="redirect-message">Ritorno alla home tra 10 secondi...</p>
+    </div>
+  </div>
+
+  <!-- Canvas fullscreen -->
   <div id="threejs-canvas"></div>
-  <!-- TODO: Renderizzare barra vita, armi, giocatori, ecc. -->
 </div>

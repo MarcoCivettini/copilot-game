@@ -36,6 +36,12 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
   isGameOver = false;
   winner: string | null = null;
 
+  // HUD data
+  myHealth = 10;
+  myMaxHealth = 10;
+  playersAlive = 0;
+  totalPlayers = 0;
+
   // ThreeJS
   private scene!: THREE.Scene;
   private camera!: THREE.PerspectiveCamera;
@@ -74,6 +80,17 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
     room.onMessage('playerList', (data: { players: PlayerData[] }) => {
       console.log('[BattlePage] Received player list:', data.players);
       this.players = data.players;
+
+      // Aggiorna HUD con dati del player locale
+      const myPlayer = data.players.find(p => p.sessionId === this.myPlayerId);
+      if (myPlayer) {
+        this.myHealth = myPlayer.hp;
+        this.myMaxHealth = myPlayer.maxHp;
+      }
+
+      // Conta giocatori vivi e totali
+      this.playersAlive = data.players.filter(p => p.isAlive).length;
+      this.totalPlayers = data.players.length;
 
       // Aggiorna ogni player nella scena
       data.players.forEach(player => {
