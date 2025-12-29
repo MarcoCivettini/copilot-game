@@ -1,6 +1,7 @@
 import { Room, Client, matchMaker } from 'colyseus';
 import { LobbyState, LobbyPlayer } from '../schemas/LobbyState';
 import { GAME_CONFIG, WeaponType } from '../config/game.config';
+import { ValidationService } from '../services/validation.service';
 
 /**
  * Messaggi ricevuti dai client
@@ -40,24 +41,18 @@ export class LobbyRoom extends Room<LobbyState> {
   onJoin(client: Client, options: JoinLobbyMessage): void {
     console.log(`[LobbyRoom] Client ${client.sessionId} joined`);
 
-    // Valida input
-    if (!options.name || !options.weaponType) {
-      console.error('[LobbyRoom] Invalid join options');
-      client.error(400, 'Nome e arma sono obbligatori');
-      return;
-    }
-
-    // Verifica che l'arma sia valida
-    if (!Object.values(WeaponType).includes(options.weaponType)) {
-      console.error('[LobbyRoom] Invalid weapon type');
-      client.error(400, 'Tipo di arma non valido');
+    // Valida input usando ValidationService
+    const validation = ValidationService.validateJoinData(options);
+    if (!validation.valid) {
+      console.error('[LobbyRoom] Invalid join options:', validation.error);
+      client.error(400, validation.error || 'Dati non validi');
       return;
     }
 
     // Crea il giocatore nella lobby
     const player = new LobbyPlayer();
     player.sessionId = client.sessionId;
-    player.name = this.sanitizeName(options.name);
+    player.name = ValidationService.sanitizeName(options.name);
     player.weaponType = options.weaponType;
     player.isReady = true;
 
@@ -183,18 +178,11 @@ export class LobbyRoom extends Room<LobbyState> {
     if (!player) return;
 
     if (message.name) {
-      player.name = this.sanitizeName(message.name);
+      player.name = ValidationService.sanitizeName(message.name);
     }
 
-    if (message.weaponType && Object.values(WeaponType).includes(message.weaponType)) {
+    if (message.weaponType && ValidationService.isValidWeapon(message.weaponType)) {
       player.weaponType = message.weaponType;
     }
-  }
-
-  /**
-   * Sanitizza il nome del giocatore
-   */
-  private sanitizeName(name: string): string {
-    return name.trim().substring(0, 20) || 'Player';
   }
 }

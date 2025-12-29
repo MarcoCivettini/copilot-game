@@ -1,7 +1,10 @@
 import { Room, Client } from 'colyseus';
-import { BattleState, Player, Position, Projectile } from '../schemas/BattleState';
+import { BattleState, Player } from '../schemas/BattleState';
 import { GAME_CONFIG, WeaponType } from '../config/game.config';
 import { CombatService } from '../services/combat.service';
+import { MapService } from '../services/map.service';
+import { PlayerService } from '../services/player.service';
+import { ProjectileService } from '../services/projectile.service';
 
 /**
  * Messaggi ricevuti dai client
@@ -10,24 +13,6 @@ interface PlayerInput {
   x: number;
   z: number;
   rotation: number;
-}
-
-interface AttackInput {
-  timestamp: number;
-}
-
-/**
- * Dati player inviati ai client (plain JS object)
- */
-interface PlayerData {
-  sessionId: string;
-  name: string;
-  weaponType: WeaponType;
-  position: { x: number; y: number; z: number };
-  rotation: number;
-  hp: number;
-  maxHp: number;
-  isAlive: boolean;
 }
 
 /**
@@ -54,8 +39,8 @@ export class BattleRoom extends Room<BattleState> {
     });
 
     // Gestisce l'attacco del giocatore
-    this.onMessage('playerAttack', (client: Client, message: AttackInput) => {
-      this.handlePlayerAttack(client, message.timestamp);
+    this.onMessage('playerAttack', (client: Client) => {
+      this.handlePlayerAttack(client);
     });
 
     // Avvia il countdown
@@ -78,8 +63,8 @@ export class BattleRoom extends Room<BattleState> {
     player.maxHp = GAME_CONFIG.PLAYER_MAX_HP;
     player.isAlive = true;
 
-    // Spawn in posizione random nel cerchio
-    const spawnPosition = this.getRandomSpawnPosition();
+    // Spawn in posizione random nel cerchio usando MapService
+    const spawnPosition = MapService.getRandomSpawnPosition();
     player.position.x = spawnPosition.x;
     player.position.y = 0;
     player.position.z = spawnPosition.z;
@@ -125,49 +110,33 @@ export class BattleRoom extends Room<BattleState> {
       return;
     }
 
-    // Aggiorna proiettili
-    const projectilesToRemove: string[] = [];
-
-    this.state.projectiles.forEach((projectile, projectileId) => {
-      // Muovi il proiettile
-      const shouldRemove = CombatService.updateProjectile(projectile, deltaTime / 1000);
-
-      if (shouldRemove) {
-        projectilesToRemove.push(projectileId);
-        return;
-      }
-
-      // Controlla collisioni con giocatori
-      const hitPlayerId = CombatService.checkProjectileCollision(
-        projectile,
-        this.state.players
-      );
-
-      if (hitPlayerId) {
-        projectilesToRemove.push(projectileId);
-
-        // Notifica il colpo
-        this.broadcast('playerHit', {
-          attackerId: projectile.ownerId,
-          targetId: hitPlayerId,
-          damage: projectile.damage,
-          weaponType: WeaponType.BOW
-        });
-
-        console.log(`[BattleRoom] Player ${hitPlayerId} hit by arrow from ${projectile.ownerId}`);
-      }
-    });
+    // Aggiorna proiettili usando ProjectileService
+    const { toRemove, hits } = ProjectileService.updateAllProjectiles(
+      this.state.projectiles,
+      this.state.players,
+      deltaTime / 1000
+    );
 
     // Rimuovi proiettili
-    projectilesToRemove.forEach(id => {
-      this.state.projectiles.delete(id);
+    toRemove.forEach(id => this.state.projectiles.delete(id));
+
+    // Notifica colpi
+    hits.forEach(hit => {
+      this.broadcast('playerHit', {
+        attackerId: this.state.projectiles.get(hit.projectileId)?.ownerId || '',
+        targetId: hit.playerId,
+        damage: hit.damage,
+        weaponType: WeaponType.BOW
+      });
+
+      console.log(`[BattleRoom] Player ${hit.playerId} hit by arrow`);
     });
 
-    // Controlla giocatori fuori mappa
+    // Controlla giocatori fuori mappa usando MapService
     this.state.players.forEach((player, playerId) => {
       if (!player.isAlive) return;
 
-      if (CombatService.isPlayerOutOfBounds(player.position)) {
+      if (MapService.isOutOfBounds(player.position)) {
         player.isAlive = false;
         player.hp = 0;
 
@@ -210,7 +179,7 @@ export class BattleRoom extends Room<BattleState> {
   /**
    * Gestisce l'attacco del giocatore
    */
-  private handlePlayerAttack(client: Client, timestamp: number): void {
+  private handlePlayerAttack(client: Client): void {
     const player = this.state.players.get(client.sessionId);
     if (!player || !player.isAlive || !this.state.gameActive) {
       return;
@@ -219,9 +188,9 @@ export class BattleRoom extends Room<BattleState> {
     const currentTime = Date.now();
 
     if (player.weaponType === WeaponType.BOW) {
-      // Crea proiettile
+      // Crea proiettile usando ProjectileService
       const projectileId = `projectile_${this.projectileCounter++}`;
-      const projectile = CombatService.createProjectile(player, projectileId, currentTime);
+      const projectile = ProjectileService.createProjectile(player, projectileId, currentTime);
 
       if (projectile) {
         this.state.projectiles.set(projectileId, projectile);
@@ -281,7 +250,7 @@ export class BattleRoom extends Room<BattleState> {
   private startCountdown(): void {
     this.state.countdown = GAME_CONFIG.COUNTDOWN_DURATION;
 
-    const countdownInterval = this.clock.setInterval(() => {
+    this.clock.setInterval(() => {
       this.state.countdown--;
 
       if (this.state.countdown <= 0) {
@@ -301,13 +270,13 @@ export class BattleRoom extends Room<BattleState> {
       return;
     }
 
-    const aliveCount = CombatService.countAlivePlayers(this.state.players);
+    const aliveCount = PlayerService.countAlivePlayers(this.state.players);
 
     if (aliveCount <= 1) {
       this.state.gameEnded = true;
       this.state.gameActive = false;
 
-      const winner = CombatService.findWinner(this.state.players);
+      const winner = PlayerService.findWinner(this.state.players);
 
       if (winner) {
         this.state.winnerId = winner.sessionId;
@@ -336,30 +305,10 @@ export class BattleRoom extends Room<BattleState> {
   }
 
   /**
-   * Genera una posizione random nel cerchio della mappa
-   */
-  /**
    * Invia la lista completa dei player a un singolo client (per chi si connette)
    */
   private sendPlayerListToClient(client: Client): void {
-    const playersList: PlayerData[] = [];
-    this.state.players.forEach((player, sessionId) => {
-      playersList.push({
-        sessionId: sessionId,
-        name: player.name,
-        weaponType: player.weaponType as WeaponType,
-        position: {
-          x: player.position.x,
-          y: player.position.y,
-          z: player.position.z
-        },
-        rotation: player.rotation,
-        hp: player.hp,
-        maxHp: player.maxHp,
-        isAlive: player.isAlive
-      });
-    });
-
+    const playersList = PlayerService.serializePlayerList(this.state.players);
     client.send('playerList', { players: playersList });
     console.log(`[BattleRoom] Sent player list to client ${client.sessionId} with ${playersList.length} players`);
   }
@@ -368,35 +317,8 @@ export class BattleRoom extends Room<BattleState> {
    * Broadcast della lista completa dei player a tutti i client connessi
    */
   private broadcastPlayerList(): void {
-    const playersList: PlayerData[] = [];
-    this.state.players.forEach((player, sessionId) => {
-      playersList.push({
-        sessionId: sessionId,
-        name: player.name,
-        weaponType: player.weaponType as WeaponType,
-        position: {
-          x: player.position.x,
-          y: player.position.y,
-          z: player.position.z
-        },
-        rotation: player.rotation,
-        hp: player.hp,
-        maxHp: player.maxHp,
-        isAlive: player.isAlive
-      });
-    });
-
+    const playersList = PlayerService.serializePlayerList(this.state.players);
     this.broadcast('playerList', { players: playersList });
     console.log(`[BattleRoom] Broadcasted player list with ${playersList.length} players`);
-  }
-
-  private getRandomSpawnPosition(): { x: number; z: number } {
-    const angle = Math.random() * Math.PI * 2;
-    const radius = Math.random() * (GAME_CONFIG.MAP_RADIUS - 5); // -5 per non spawnarli troppo al bordo
-
-    return {
-      x: Math.cos(angle) * radius,
-      z: Math.sin(angle) * radius
-    };
   }
 }
