@@ -1,5 +1,7 @@
 # Copilot Backend Instructions
 
+il codice backend si trova nella cartella `server/`
+
 ## Technologies
 - Node.js
 - TypeScript

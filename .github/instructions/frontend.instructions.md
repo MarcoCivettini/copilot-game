@@ -1,5 +1,8 @@
 # Copilot Angular Instructions
 
+il codice backend si trova nella cartella `client/`
+
+
 ## Coding Style
 - Usa reactive forms
 - Evita logica pesante nei component

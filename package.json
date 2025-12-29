@@ -1,0 +1,26 @@
+{
+  "name": "copilot-game",
+  "version": "1.0.0",
+  "description": "Mini Battle Royale Multiplayer Game - ThreeJS + Colyseus",
+  "private": true,
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "install:all": "npm install && cd server && npm install && cd ../client && npm install",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "cd server && npm run dev",
+    "dev:client": "cd client && npm start",
+    "build": "npm run build:server && npm run build:client",
+    "build:server": "cd server && npm run build",
+    "build:client": "cd client && npm run build"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}

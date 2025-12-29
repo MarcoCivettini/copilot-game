@@ -1,0 +1,10 @@
+<div class="battle-container">
+  <h2>Battle Royale</h2>
+  <div *ngIf="isGameOver" class="game-over">
+    <h3>Game Over!</h3>
+    <p>Vincitore: {{ winner }}</p>
+    <p>Ritorno alla home tra 10 secondi...</p>
+  </div>
+  <div id="threejs-canvas"></div>
+  <!-- TODO: Renderizzare barra vita, armi, giocatori, ecc. -->
+</div>

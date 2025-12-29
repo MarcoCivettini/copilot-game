@@ -1,0 +1,24 @@
+.battle-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+}
+#threejs-canvas {
+  width: 100vw;
+  height: 70vh;
+  background: #111;
+  margin-top: 2rem;
+  border-radius: 1rem;
+  box-shadow: 0 2px 16px #0008;
+}
+.game-over {
+  background: #000a;
+  padding: 2rem;
+  border-radius: 1rem;
+  margin-bottom: 2rem;
+  text-align: center;
+}
