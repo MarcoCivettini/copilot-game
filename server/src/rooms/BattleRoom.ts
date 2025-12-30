@@ -287,6 +287,12 @@ export class BattleRoom extends Room<BattleState> {
       // Inizializza il Set dei player colpiti per questo swing
       this.swingHitPlayers.set(client.sessionId, new Set<string>());
       
+      // Broadcast ai client (escluso mittente) per mostrare l'animazione dello swing
+      this.broadcast('weaponSwingStarted', {
+        sessionId: client.sessionId,
+        weaponType: player.weaponType
+      }, { except: client });
+      
       // Cleanup dopo la durata dello swing
       setTimeout(() => {
         this.activeSwings.delete(client.sessionId);
