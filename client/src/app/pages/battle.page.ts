@@ -98,6 +98,16 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
       }
     });
 
+    // Ascolta inizio swing dell'arma (per mostrare animazione agli altri client)
+    room.onMessage('weaponSwingStarted', (data: { sessionId: string, weaponType: string }) => {
+      console.log('[BattlePage] Weapon swing started:', data);
+      
+      const attackerMesh = this.playerMeshes.get(data.sessionId);
+      if (attackerMesh && data.weaponType === 'SWORD') {
+        this.playerMeshService.playSwordSwing(attackerMesh);
+      }
+    });
+
     // Ascolta eliminazioni
     room.onMessage('playerEliminated', (data: { playerId: string, killerId: string }) => {
       console.log('[BattlePage] Player eliminated:', data);
