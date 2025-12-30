@@ -60,7 +60,6 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
 
     // Ascolta la lista dei player (message-based invece di schema)
     room.onMessage('playerList', (data: { players: PlayerData[] }) => {
-      console.log('[BattlePage] Received player list:', data.players);
       this.players = data.players;
 
       // Aggiorna HUD con dati del player locale
@@ -91,7 +90,12 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
     // Ascolta attacchi
     room.onMessage('playerAttacked', (data: { attackerId: string, targetId: string, damage: number }) => {
       console.log('[BattlePage] Attack:', data);
-      // TODO: Mostra effetto visivo dell'attacco
+      
+      // Mostra effetto visivo swing per l'attaccante
+      const attackerMesh = this.playerMeshes.get(data.attackerId);
+      if (attackerMesh && attackerMesh.weaponType === 'SWORD') {
+        this.playerMeshService.playSwordSwing(attackerMesh);
+      }
     });
 
     // Ascolta eliminazioni
@@ -127,8 +131,26 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
   private attack() {
     const room = this.colyseus.getRoom();
     if (room) {
-      room.send('playerAttack', { timestamp: Date.now() });
       console.log('[BattlePage] Attack sent!');
+
+      // Anima lo swing della spada se il giocatore ha la spada
+      const myPlayerMesh = this.playerMeshes.get(this.myPlayerId);
+      
+      if (myPlayerMesh) {
+        if (myPlayerMesh.weaponType === 'SWORD') {
+          // Invia continuamente le posizioni dell'arma durante l'animazione
+          this.playerMeshService.playSwordSwing(myPlayerMesh, (tipPos, basePos) => {
+            room.send('weaponSwing', {
+              tipPosition: { x: tipPos.x, y: tipPos.y, z: tipPos.z },
+              basePosition: { x: basePos.x, y: basePos.y, z: basePos.z },
+              timestamp: Date.now()
+            });
+          });
+        } else {
+          // Per altre armi, invia attacco semplice
+          room.send('playerAttack', { timestamp: Date.now() });
+        }
+      }
     }
   }
 

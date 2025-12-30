@@ -28,6 +28,11 @@ export class BattleRoom extends Room<BattleState> {
   maxClients = GAME_CONFIG.MAX_PLAYERS;
   private updateInterval: NodeJS.Timeout | undefined;
   private projectileCounter = 0;
+  private activeSwings = new Set<string>(); // Traccia player che stanno swingando
+  private swingHitPlayers = new Map<string, Set<string>>(); // Map<attackerSessionId, Set<victimSessionId>>
+  
+  // Costanti per la gestione dello swing
+  private readonly SWING_CLEANUP_DELAY_MS = 500; // Durata swing (400ms) + margine di sicurezza
 
   onCreate(): void {
     this.setState(new BattleState());
@@ -41,6 +46,15 @@ export class BattleRoom extends Room<BattleState> {
     // Gestisce l'attacco del giocatore
     this.onMessage('playerAttack', (client: Client) => {
       this.handlePlayerAttack(client);
+    });
+
+    // Gestisce l'attacco con hitbox durante l'animazione dello swing
+    this.onMessage('weaponSwing', (client: Client, message: {
+      tipPosition: { x: number; y: number; z: number };
+      basePosition: { x: number; y: number; z: number };
+      timestamp: number;
+    }) => {
+      this.handleWeaponSwing(client, message);
     });
 
     // Avvia il countdown
@@ -241,6 +255,98 @@ export class BattleRoom extends Room<BattleState> {
           }
         });
       }
+    }
+  }
+
+  /**
+   * Gestisce l'attacco con hitbox durante l'animazione dello swing della spada.
+   */
+  private handleWeaponSwing(
+    client: Client,
+    message: {
+      tipPosition: { x: number; y: number; z: number };
+      basePosition: { x: number; y: number; z: number };
+      timestamp: number;
+    }
+  ): void {
+    const player = this.state.players.get(client.sessionId);
+    if (!player || !player.isAlive || !this.state.gameActive) {
+      return;
+    }
+
+    // Verifica che il player abbia un'arma da mischia
+    if (player.weaponType === WeaponType.BOW) {
+      return;
+    }
+
+    // Controlla se è il primo messaggio dello swing (per il cooldown)
+    const isFirstSwingMessage = !this.activeSwings.has(client.sessionId);
+    
+    if (isFirstSwingMessage) {
+      this.activeSwings.add(client.sessionId);
+      // Inizializza il Set dei player colpiti per questo swing
+      this.swingHitPlayers.set(client.sessionId, new Set<string>());
+      
+      // Cleanup dopo la durata dello swing
+      setTimeout(() => {
+        this.activeSwings.delete(client.sessionId);
+        this.swingHitPlayers.delete(client.sessionId);
+      }, this.SWING_CLEANUP_DELAY_MS);
+    }
+
+    // Usa il nuovo metodo con hitbox dell'arma
+    // Controlla cooldown solo al primo messaggio
+    const hitPlayers = CombatService.handleWeaponHitboxAttack(
+      player,
+      message.tipPosition,
+      message.basePosition,
+      this.state.players,
+      isFirstSwingMessage // Controlla cooldown solo al primo frame
+    );
+
+    if (hitPlayers.length > 0) {
+      // Ottieni il Set dei player già colpiti (per reference, non copia)
+      const alreadyHitThisSwing = this.swingHitPlayers.get(client.sessionId);
+      
+      if (!alreadyHitThisSwing) {
+        return;
+      }
+      
+      hitPlayers.forEach(targetId => {
+        // Salta se già colpito in questo swing
+        if (alreadyHitThisSwing.has(targetId)) {
+          return;
+        }
+        
+        // Aggiungi alla lista dei colpiti (modifica il Set nella Map)
+        alreadyHitThisSwing.add(targetId);
+        
+        const target = this.state.players.get(targetId);
+        if (target) {
+          // Applica il danno
+          const damage = player.weaponType === WeaponType.SWORD ? 2 : 4;
+          CombatService.applyDamage(target, damage);
+          
+          // Broadcast usando il messaggio che il client ascolta
+          this.broadcast('playerAttacked', {
+            attackerId: player.sessionId,
+            targetId: targetId,
+            damage: damage
+          });
+
+          // Broadcast immediato della lista player aggiornata per sincronizzare l'HP
+          this.broadcastPlayerList();
+
+          // Se il target è morto, notifica eliminazione
+          if (!target.isAlive) {
+            this.broadcast('playerEliminated', {
+              playerId: targetId,
+              killerId: player.sessionId,
+              reason: 'killed'
+            });
+          }
+        }
+      });
     }
   }
 
