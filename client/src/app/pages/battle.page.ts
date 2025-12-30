@@ -60,13 +60,6 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
 
     // Ascolta la lista dei player (message-based invece di schema)
     room.onMessage('playerList', (data: { players: PlayerData[] }) => {
-      console.log('[BattlePage] Received player list:', data.players);
-      
-      // Debug: verifica weaponType
-      data.players.forEach(p => {
-        console.log(`[BattlePage] Player ${p.name} weapon:`, p.weaponType, typeof p.weaponType);
-      });
-      
       this.players = data.players;
 
       // Aggiorna HUD con dati del player locale
@@ -142,41 +135,21 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
 
       // Anima lo swing della spada se il giocatore ha la spada
       const myPlayerMesh = this.playerMeshes.get(this.myPlayerId);
-      console.log('[BattlePage] My player mesh:', myPlayerMesh);
       
       if (myPlayerMesh) {
-        console.log('[BattlePage] My weapon type:', myPlayerMesh.weaponType);
-        
         if (myPlayerMesh.weaponType === 'SWORD') {
-          console.log('[BattlePage] Starting sword swing animation');
-          
           // Invia continuamente le posizioni dell'arma durante l'animazione
-          const duration = this.playerMeshService.playSwordSwing(myPlayerMesh, (tipPos, basePos) => {
-            const dx = tipPos.x - basePos.x;
-            const dy = tipPos.y - basePos.y;
-            const dz = tipPos.z - basePos.z;
-            const length = Math.sqrt(dx*dx + dy*dy + dz*dz);
-            console.log('[BattlePage] Weapon line - Base:', 
-              `(${basePos.x.toFixed(2)}, ${basePos.y.toFixed(2)}, ${basePos.z.toFixed(2)})`,
-              'Tip:',
-              `(${tipPos.x.toFixed(2)}, ${tipPos.y.toFixed(2)}, ${tipPos.z.toFixed(2)})`,
-              'Length:', length.toFixed(2));
-            
+          this.playerMeshService.playSwordSwing(myPlayerMesh, (tipPos, basePos) => {
             room.send('weaponSwing', {
               tipPosition: { x: tipPos.x, y: tipPos.y, z: tipPos.z },
               basePosition: { x: basePos.x, y: basePos.y, z: basePos.z },
               timestamp: Date.now()
             });
           });
-          
-          console.log('[BattlePage] Swing duration:', duration);
         } else {
-          console.log('[BattlePage] Not a sword, skipping animation');
           // Per altre armi, invia attacco semplice
           room.send('playerAttack', { timestamp: Date.now() });
         }
-      } else {
-        console.log('[BattlePage] No player mesh found for:', this.myPlayerId);
       }
     }
   }

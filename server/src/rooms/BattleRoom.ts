@@ -30,6 +30,9 @@ export class BattleRoom extends Room<BattleState> {
   private projectileCounter = 0;
   private activeSwings = new Set<string>(); // Traccia player che stanno swingando
   private swingHitPlayers = new Map<string, Set<string>>(); // Map<attackerSessionId, Set<victimSessionId>>
+  
+  // Costanti per la gestione dello swing
+  private readonly SWING_CLEANUP_DELAY_MS = 500; // Durata swing (400ms) + margine di sicurezza
 
   onCreate(): void {
     this.setState(new BattleState());
@@ -51,7 +54,6 @@ export class BattleRoom extends Room<BattleState> {
       basePosition: { x: number; y: number; z: number };
       timestamp: number;
     }) => {
-      console.log('[BattleRoom] Received weaponSwing from', client.sessionId, message);
       this.handleWeaponSwing(client, message);
     });
 
@@ -269,35 +271,27 @@ export class BattleRoom extends Room<BattleState> {
   ): void {
     const player = this.state.players.get(client.sessionId);
     if (!player || !player.isAlive || !this.state.gameActive) {
-      console.log('[BattleRoom] weaponSwing rejected - player invalid or game not active');
       return;
     }
 
     // Verifica che il player abbia un'arma da mischia
     if (player.weaponType === WeaponType.BOW) {
-      console.log('[BattleRoom] weaponSwing rejected - player has BOW');
       return;
     }
 
-    console.log('[BattleRoom] Processing weaponSwing for player', player.name);
-    console.log('[BattleRoom] Weapon positions - Tip:', message.tipPosition, 'Base:', message.basePosition);
-
     // Controlla se è il primo messaggio dello swing (per il cooldown)
     const isFirstSwingMessage = !this.activeSwings.has(client.sessionId);
-    console.log('[BattleRoom] isFirstSwingMessage:', isFirstSwingMessage, '| activeSwings has player:', this.activeSwings.has(client.sessionId));
     
     if (isFirstSwingMessage) {
       this.activeSwings.add(client.sessionId);
       // Inizializza il Set dei player colpiti per questo swing
       this.swingHitPlayers.set(client.sessionId, new Set<string>());
-      console.log('[BattleRoom] Initialized swingHitPlayers for', client.sessionId);
       
-      // Dopo 500ms (durata swing + margine), rimuovi dal set e pulisci tracking colpi
+      // Cleanup dopo la durata dello swing
       setTimeout(() => {
-        console.log('[BattleRoom] Clearing swing data for', client.sessionId);
         this.activeSwings.delete(client.sessionId);
         this.swingHitPlayers.delete(client.sessionId);
-      }, 500);
+      }, this.SWING_CLEANUP_DELAY_MS);
     }
 
     // Usa il nuovo metodo con hitbox dell'arma
@@ -310,31 +304,22 @@ export class BattleRoom extends Room<BattleState> {
       isFirstSwingMessage // Controlla cooldown solo al primo frame
     );
 
-    console.log('[BattleRoom] Hit players:', hitPlayers);
-
     if (hitPlayers.length > 0) {
       // Ottieni il Set dei player già colpiti (per reference, non copia)
       const alreadyHitThisSwing = this.swingHitPlayers.get(client.sessionId);
-      console.log('[BattleRoom] swingHitPlayers.get result:', alreadyHitThisSwing, '| Map size:', this.swingHitPlayers.size);
       
       if (!alreadyHitThisSwing) {
-        console.log('[BattleRoom] ERROR: swingHitPlayers Set not found for', client.sessionId);
-        console.log('[BattleRoom] Available keys in swingHitPlayers:', Array.from(this.swingHitPlayers.keys()));
         return;
       }
-      
-      console.log('[BattleRoom] Already hit players in this swing:', Array.from(alreadyHitThisSwing));
       
       hitPlayers.forEach(targetId => {
         // Salta se già colpito in questo swing
         if (alreadyHitThisSwing.has(targetId)) {
-          console.log(`[BattleRoom] Player ${targetId} already hit in this swing - skipping`);
           return;
         }
         
         // Aggiungi alla lista dei colpiti (modifica il Set nella Map)
         alreadyHitThisSwing.add(targetId);
-        console.log(`[BattleRoom] Added ${targetId} to hit list. Total hits this swing:`, alreadyHitThisSwing.size);
         
         const target = this.state.players.get(targetId);
         if (target) {
@@ -349,10 +334,6 @@ export class BattleRoom extends Room<BattleState> {
             damage: damage
           });
 
-          console.log(
-            `[BattleRoom] Player ${target.name} hit by ${player.name}'s weapon swing - HP: ${target.hp}`
-          );
-
           // Broadcast immediato della lista player aggiornata per sincronizzare l'HP
           this.broadcastPlayerList();
 
@@ -363,8 +344,6 @@ export class BattleRoom extends Room<BattleState> {
               killerId: player.sessionId,
               reason: 'killed'
             });
-            
-            console.log(`[BattleRoom] Player ${target.name} eliminated by ${player.name}`);
           }
         }
       });

@@ -44,9 +44,7 @@ export class CombatService {
     if (lineLengthSq === 0) {
       const distSq =
         toSphere.x * toSphere.x + toSphere.y * toSphere.y + toSphere.z * toSphere.z;
-      const hit = distSq <= sphereRadius * sphereRadius;
-      console.log('[CombatService] Line has zero length, distance:', Math.sqrt(distSq), 'radius:', sphereRadius, 'hit:', hit);
-      return hit;
+      return distSq <= sphereRadius * sphereRadius;
     }
 
     // Proiezione di toSphere sulla linea (parametro t tra 0 e 1)
@@ -72,15 +70,7 @@ export class CombatService {
     };
 
     const distSq = distVec.x * distVec.x + distVec.y * distVec.y + distVec.z * distVec.z;
-    const distance = Math.sqrt(distSq);
-    const hit = distSq <= sphereRadius * sphereRadius;
-
-    console.log('[CombatService] Collision check - distance:', distance.toFixed(2), 'radius:', sphereRadius, 't:', t.toFixed(2), 'hit:', hit);
-    console.log('[CombatService] Line:', lineStart, '->', lineEnd);
-    console.log('[CombatService] Sphere center:', sphereCenter);
-    console.log('[CombatService] Closest point on line:', closestPoint);
-
-    return hit;
+    return distSq <= sphereRadius * sphereRadius;
   }
 
   /**
@@ -162,7 +152,6 @@ export class CombatService {
   ): string[] {
     const weapon = WEAPONS[attacker.weaponType as WeaponType];
     if (!weapon) {
-      console.log('[CombatService] No weapon config found for', attacker.weaponType);
       return [];
     }
 
@@ -170,18 +159,12 @@ export class CombatService {
     if (checkCooldown) {
       const currentTime = Date.now();
       if (currentTime - attacker.lastAttackTime < weapon.cooldown) {
-        console.log('[CombatService] Attack on cooldown', {
-          elapsed: currentTime - attacker.lastAttackTime,
-          cooldown: weapon.cooldown
-        });
         return [];
       }
       attacker.lastAttackTime = currentTime;
       attacker.isAttacking = true;
     }
 
-    console.log('[CombatService] Processing weapon hitbox attack for', attacker.name);
-    
     const hitPlayers: string[] = [];
 
     // Controlla tutti i giocatori nemici
@@ -195,15 +178,10 @@ export class CombatService {
         z: target.position.z
       };
 
-      console.log('[CombatService] Checking collision with', target.name, 'at', targetCenter);
-
       // Verifica se il segmento dell'arma interseca la sfera del target
       if (this.lineIntersectsSphere(weaponBase, weaponTip, targetCenter, this.PLAYER_HITBOX_RADIUS)) {
-        console.log('[CombatService] HIT DETECTED on', target.name);
         // NON applichiamo danno qui - lo fa il BattleRoom dopo aver verificato duplicati
         hitPlayers.push(targetId);
-      } else {
-        console.log('[CombatService] No hit on', target.name);
       }
     });
 

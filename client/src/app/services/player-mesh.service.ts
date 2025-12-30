@@ -196,19 +196,10 @@ export class PlayerMeshService {
     playerMesh: PlayerMesh,
     onSwingUpdate?: (tipPosition: THREE.Vector3, basePosition: THREE.Vector3) => void
   ): number {
-    console.log('[PlayerMeshService] playSwordSwing called', {
-      weaponType: playerMesh.weaponType,
-      hasWeapon: !!playerMesh.weapon,
-      isSwinging: playerMesh.isSwinging,
-      hasTrail: !!playerMesh.swingTrail
-    });
-    
     if (playerMesh.weaponType !== 'SWORD' || !playerMesh.weapon || playerMesh.isSwinging) {
-      console.log('[PlayerMeshService] Conditions not met for sword swing');
       return 0;
     }
 
-    console.log('[PlayerMeshService] Starting sword swing animation');
     playerMesh.isSwinging = true;
     const weapon = playerMesh.weapon;
     const swingTrail = playerMesh.swingTrail;
@@ -255,8 +246,8 @@ export class PlayerMeshService {
       weapon.rotation.y = startRotationY + forwardSwing;
       
       // Rotazione X: inclina la spada verso l'esterno (in fuori dal personaggio)
-      // Max inclinazione al centro (quando passa davanti)
-      const depthRotation = Math.sin(progress * Math.PI) * (-Math.PI / 100); // Aumentato da -45° a -72°
+      // Piccola inclinazione verso l'esterno al centro dell'animazione (~-1.8°)
+      const depthRotation = Math.sin(progress * Math.PI) * (-Math.PI / 100);
       weapon.rotation.x = startRotationX + depthRotation;
 
       // Aggiorna shader del trail
