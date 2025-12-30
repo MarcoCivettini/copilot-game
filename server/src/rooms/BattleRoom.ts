@@ -342,16 +342,19 @@ export class BattleRoom extends Room<BattleState> {
           const damage = player.weaponType === WeaponType.SWORD ? 2 : 4;
           CombatService.applyDamage(target, damage);
           
-          this.broadcast('playerHit', {
+          // Broadcast usando il messaggio che il client ascolta
+          this.broadcast('playerAttacked', {
             attackerId: player.sessionId,
             targetId: targetId,
-            damage: damage,
-            weaponType: player.weaponType
+            damage: damage
           });
 
           console.log(
             `[BattleRoom] Player ${target.name} hit by ${player.name}'s weapon swing - HP: ${target.hp}`
           );
+
+          // Broadcast immediato della lista player aggiornata per sincronizzare l'HP
+          this.broadcastPlayerList();
 
           // Se il target è morto, notifica eliminazione
           if (!target.isAlive) {
