@@ -6,6 +6,7 @@ import { ThreeJsSceneService } from '../services/threejs-scene.service';
 import { PlayerMeshService, PlayerData, PlayerMesh } from '../services/player-mesh.service';
 import { InputService } from '../services/input.service';
 import { CameraService } from '../services/camera.service';
+import { WeaponHandlerFactory } from '../weapons/WeaponHandlerFactory';
 import * as THREE from 'three';
 
 @Component({
@@ -140,28 +141,20 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
 
   private attack() {
     const room = this.colyseus.getRoom();
-    if (room) {
-      console.log('[BattlePage] Attack sent!');
+    if (!room) return;
 
-      // Anima lo swing della spada se il giocatore ha la spada
-      const myPlayerMesh = this.playerMeshes.get(this.myPlayerId);
-      
-      if (myPlayerMesh) {
-        if (myPlayerMesh.weaponType === 'SWORD') {
-          // Invia continuamente le posizioni dell'arma durante l'animazione
-          this.playerMeshService.playSwordSwing(myPlayerMesh, (tipPos, basePos) => {
-            room.send('weaponSwing', {
-              tipPosition: { x: tipPos.x, y: tipPos.y, z: tipPos.z },
-              basePosition: { x: basePos.x, y: basePos.y, z: basePos.z },
-              timestamp: Date.now()
-            });
-          });
-        } else {
-          // Per altre armi, invia attacco semplice
-          room.send('playerAttack', { timestamp: Date.now() });
-        }
-      }
-    }
+    console.log('[BattlePage] Attack sent!');
+
+    const myPlayerMesh = this.playerMeshes.get(this.myPlayerId);
+    if (!myPlayerMesh) return;
+
+    // Usa il WeaponHandlerFactory per ottenere l'handler appropriato
+    const weaponHandler = WeaponHandlerFactory.createHandler(
+      myPlayerMesh.weaponType,
+      this.playerMeshService
+    );
+
+    weaponHandler.handleAttack(myPlayerMesh, room);
   }
 
   private updatePlayerInScene(sessionId: string, playerData: PlayerData) {
@@ -243,5 +236,6 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
       this.sceneService.disposeRenderer(this.renderer);
     }
     this.inputService.cleanup();
+    WeaponHandlerFactory.cleanup();
   }
 }
