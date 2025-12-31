@@ -28,6 +28,7 @@ export class BattleRoom extends Room<BattleState> {
   maxClients = GAME_CONFIG.MAX_PLAYERS;
   private updateInterval: NodeJS.Timeout | undefined;
   private attackHandler = new AttackHandler();
+  private tickCounter = 0; // Contatore per broadcast ottimizzato
 
   onCreate(): void {
     this.setState(new BattleState());
@@ -119,6 +120,8 @@ export class BattleRoom extends Room<BattleState> {
       return;
     }
 
+    this.tickCounter++;
+
     // Aggiorna proiettili usando ProjectileService
     const { toRemove, hits } = ProjectileService.updateAllProjectiles(
       this.state.projectiles,
@@ -154,7 +157,7 @@ export class BattleRoom extends Room<BattleState> {
           reason: 'out_of_bounds'
         });
 
-        console.log(`[BattleRoom] Player ${player.name} eliminated (out of bounds)`);
+        console.log(`[BattlePage] Player ${player.name} eliminated (out of bounds)`);
       }
 
       // Reset attacking flag
@@ -162,6 +165,14 @@ export class BattleRoom extends Room<BattleState> {
         player.isAttacking = false;
       }
     });
+
+    // Broadcast player list ogni 6 tick (~10 FPS) per mantenere gli spettatori aggiornati
+    // Questo assicura che i giocatori morti possano continuare a vedere gli altri
+    if (this.tickCounter % 6 === 0) {
+      const aliveCount = Array.from(this.state.players.values()).filter(p => p.isAlive).length;
+      console.log(`[BattleRoom] Broadcasting player list (${aliveCount} alive players)`);
+      this.broadcastPlayerList();
+    }
 
     // Controlla condizione di vittoria
     this.checkVictoryCondition();
@@ -387,6 +398,15 @@ export class BattleRoom extends Room<BattleState> {
    */
   private broadcastPlayerList(): void {
     const playersList = PlayerService.serializePlayerList(this.state.players);
+    const clientCount = this.clients.length;
+    console.log(`[BattleRoom] Broadcasting to ${clientCount} clients with ${playersList.length} players`);
+    
+    // Log dettagliato dei client connessi
+    this.clients.forEach(client => {
+      const player = this.state.players.get(client.sessionId);
+      console.log(`  - Client ${client.sessionId}: ${player?.name || 'unknown'} (alive: ${player?.isAlive})`);
+    });
+    
     this.broadcast('playerList', { players: playersList });
     console.log(`[BattleRoom] Broadcasted player list with ${playersList.length} players`);
   }

@@ -18,8 +18,23 @@
     </div>
   </div>
 
-  <!-- Game over overlay -->
-  <div class="game-over-overlay" *ngIf="isGameOver">
+  <!-- Victory overlay -->
+  <div class="victory-overlay" *ngIf="hasWon && isGameOver">
+    <div class="victory-content">
+      <h1 class="victory-title">HAI VINTO! 🏆</h1>
+      <p class="redirect-message">Ritorno alla home tra 10 secondi...</p>
+    </div>
+  </div>
+
+  <!-- Defeat overlay -->
+  <div class="defeat-overlay" *ngIf="isDead">
+    <div class="defeat-content">
+      <h1 class="defeat-title">HAI PERSO ☠️</h1>
+    </div>
+  </div>
+
+  <!-- Game over overlay (per altri casi) -->
+  <div class="game-over-overlay" *ngIf="isGameOver && !hasWon && !isDead">
     <div class="game-over-content">
       <h1>🏆 PARTITA TERMINATA!</h1>
       <div class="winner-info">

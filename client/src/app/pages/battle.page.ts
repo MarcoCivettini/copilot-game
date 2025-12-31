@@ -23,6 +23,8 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
   myPlayerId = '';
   isGameOver = false;
   winner: string | null = null;
+  isDead = false; // Il giocatore è morto
+  hasWon = false; // Il giocatore ha vinto
 
   // HUD data
   myHealth = 10;
@@ -39,6 +41,7 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
   // Giocatori nella scena
   private playerMeshes = new Map<string, PlayerMesh>();
   private myPlayer?: THREE.Group;
+  private spectatorGhost?: THREE.Group; // Oggetto invisibile per modalità spettatore
 
   constructor(
     private colyseus: ColyseusService,
@@ -62,6 +65,12 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
     // Ascolta la lista dei player (message-based invece di schema)
     room.onMessage('playerList', (data: { players: PlayerData[] }) => {
       this.players = data.players;
+      
+      if (this.isDead) {
+        console.log('[BattlePage] [SPECTATOR] Received player list with', data.players.length, 'players');
+        const alivePlayers = data.players.filter(p => p.isAlive);
+        console.log('[BattlePage] [SPECTATOR] Alive players:', alivePlayers.map(p => p.name));
+      }
 
       // Aggiorna HUD con dati del player locale
       const myPlayer = data.players.find(p => p.sessionId === this.myPlayerId);
@@ -112,13 +121,43 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
     // Ascolta eliminazioni
     room.onMessage('playerEliminated', (data: { playerId: string, killerId: string }) => {
       console.log('[BattlePage] Player eliminated:', data);
-      this.playerMeshService.removePlayerFromScene(data.playerId, this.playerMeshes, this.scene);
+      
+      // Se sono io a morire, entra in modalità spettatore
+      if (data.playerId === this.myPlayerId) {
+        this.isDead = true;
+        this.hasWon = false;
+        this.applyGrayscaleEffect(true);
+        
+        // Salva la posizione corrente del player prima di rimuoverlo
+        const currentPosition = this.myPlayer ? this.myPlayer.position.clone() : new THREE.Vector3(0, 0, 0);
+        
+        // Rimuovi il mesh del giocatore locale
+        this.playerMeshService.removePlayerFromScene(data.playerId, this.playerMeshes, this.scene);
+        this.myPlayer = undefined;
+        
+        // Crea un oggetto invisibile "fantasma" per la modalità spettatore
+        this.spectatorGhost = new THREE.Group();
+        this.spectatorGhost.position.copy(currentPosition);
+        this.scene.add(this.spectatorGhost);
+        
+        console.log('[BattlePage] Entered spectator mode at position:', currentPosition);
+      } else {
+        // Rimuovi gli altri giocatori eliminati dalla scena
+        this.playerMeshService.removePlayerFromScene(data.playerId, this.playerMeshes, this.scene);
+      }
     });
 
     // Ascolta fine partita
-    room.onMessage('gameOver', (data: { winner: string }) => {
+    room.onMessage('gameEnded', (data: { winnerId: string, winnerName: string }) => {
       this.isGameOver = true;
-      this.winner = data.winner;
+      this.winner = data.winnerName;
+      
+      // Verifica se ho vinto confrontando il sessionId
+      if (data.winnerId === this.myPlayerId) {
+        this.hasWon = true;
+        this.isDead = false;
+      }
+      
       setTimeout(() => this.router.navigate(['/']), 10000);
     });
 
@@ -158,11 +197,28 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
   }
 
   private updatePlayerInScene(sessionId: string, playerData: PlayerData) {
+    // Se sono morto, NON ricreare il mio mesh - rimango in modalità spettatore
+    if (sessionId === this.myPlayerId && this.isDead) {
+      console.log('[BattlePage] [SPECTATOR] Skipping update for my dead character');
+      return; // Ignora gli aggiornamenti del mio personaggio morto
+    }
+    
+    // Se il giocatore non è vivo, non mostrarlo
+    if (!playerData.isAlive) {
+      // Rimuovi se esiste
+      if (this.playerMeshes.has(sessionId)) {
+        console.log('[BattlePage] Removing dead player:', playerData.name);
+        this.playerMeshService.removePlayerFromScene(sessionId, this.playerMeshes, this.scene);
+      }
+      return;
+    }
+    
     let playerMesh = this.playerMeshes.get(sessionId);
 
     // Se il giocatore non esiste ancora, crealo usando PlayerMeshService
     if (!playerMesh) {
       const isMyPlayer = sessionId === this.myPlayerId;
+      console.log('[BattlePage] Creating mesh for player:', playerData.name, 'isMyPlayer:', isMyPlayer);
       playerMesh = this.playerMeshService.createPlayerMesh(
         sessionId,
         playerData,
@@ -180,12 +236,17 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
     if (sessionId !== this.myPlayerId && playerData.position) {
       playerMesh.mesh.position.set(
         playerData.position.x, 
-        playerData.position.y || 1, 
+        playerData.position.y || 0, 
         playerData.position.z
       );
       
       if (playerData.rotation !== undefined) {
         playerMesh.targetRotation = playerData.rotation;
+      }
+      
+      if (this.isDead) {
+        console.log('[BattlePage] [SPECTATOR] Updated player:', playerData.name, 
+          'pos:', playerData.position.x.toFixed(1), playerData.position.z.toFixed(1));
       }
     }
 
@@ -198,8 +259,12 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
   private animate = () => {
     this.animationId = requestAnimationFrame(this.animate);
     
-    // Aggiorna movimento del giocatore usando InputService
-    if (this.myPlayer) {
+    // Se sono morto, muovi il fantasma spettatore invece del player
+    if (this.isDead && this.spectatorGhost) {
+      // Movimento fantasma (non invia messaggi al server)
+      this.updateSpectatorMovement(this.spectatorGhost);
+    } else if (this.myPlayer && !this.isDead) {
+      // Aggiorna movimento del giocatore normale
       const rotation = this.inputService.updatePlayerMovement(
         this.myPlayer,
         this.colyseus.getRoom()
@@ -221,12 +286,64 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
     });
     
     // Aggiorna camera usando CameraService
-    if (this.myPlayer) {
+    if (this.isDead && this.spectatorGhost) {
+      // In modalità spettatore, segui il fantasma
+      this.cameraService.updateThirdPersonCamera(this.camera, this.spectatorGhost);
+    } else if (this.myPlayer) {
+      // Modalità normale, segui il player
       this.cameraService.updateThirdPersonCamera(this.camera, this.myPlayer);
     }
     
     this.renderer.render(this.scene, this.camera);
   };
+
+  /**
+   * Aggiorna il movimento dello spettatore fantasma (senza inviare al server).
+   */
+  private updateSpectatorMovement(ghost: THREE.Group): void {
+    const moveSpeed = 0.3; // Leggermente più veloce per lo spettatore
+    const keys = (this.inputService as any).keys; // Accesso diretto ai tasti
+    
+    if (!keys) return;
+    
+    let moved = false;
+    const movementVector = new THREE.Vector3(0, 0, 0);
+    
+    if (keys.w) {
+      movementVector.z -= moveSpeed;
+      moved = true;
+    }
+    if (keys.s) {
+      movementVector.z += moveSpeed;
+      moved = true;
+    }
+    if (keys.a) {
+      movementVector.x -= moveSpeed;
+      moved = true;
+    }
+    if (keys.d) {
+      movementVector.x += moveSpeed;
+      moved = true;
+    }
+    
+    if (moved) {
+      ghost.position.add(movementVector);
+    }
+  }
+
+  /**
+   * Applica o rimuove l'effetto scala di grigi al canvas.
+   */
+  private applyGrayscaleEffect(apply: boolean): void {
+    const canvas = document.getElementById('threejs-canvas');
+    if (canvas) {
+      if (apply) {
+        canvas.style.filter = 'grayscale(100%)';
+      } else {
+        canvas.style.filter = 'none';
+      }
+    }
+  }
 
   ngOnDestroy() {
     if (this.animationId) {

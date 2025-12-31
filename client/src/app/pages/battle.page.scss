@@ -83,6 +83,96 @@
   }
 }
 
+.victory-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  pointer-events: none;
+  
+  .victory-content {
+    text-align: center;
+    animation: victoryPulse 2s ease-in-out infinite;
+    
+    .victory-title {
+      font-size: 6rem;
+      font-weight: 900;
+      color: #ffd700;
+      text-shadow: 
+        0 0 20px rgba(255, 215, 0, 0.8),
+        0 0 40px rgba(255, 215, 0, 0.6),
+        0 0 60px rgba(255, 215, 0, 0.4),
+        4px 4px 8px rgba(0, 0, 0, 0.8);
+      margin-bottom: 1rem;
+      letter-spacing: 0.1em;
+    }
+    
+    .redirect-message {
+      font-size: 1.2rem;
+      color: #fff;
+      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+    }
+  }
+}
+
+.defeat-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  pointer-events: none;
+  
+  .defeat-content {
+    text-align: center;
+    animation: defeatShake 0.5s ease-in-out;
+    
+    .defeat-title {
+      font-size: 6rem;
+      font-weight: 900;
+      color: #ff0000;
+      text-shadow: 
+        0 0 20px rgba(255, 0, 0, 0.8),
+        0 0 40px rgba(255, 0, 0, 0.6),
+        0 0 60px rgba(255, 0, 0, 0.4),
+        4px 4px 8px rgba(0, 0, 0, 0.8);
+      letter-spacing: 0.1em;
+    }
+  }
+}
+
+@keyframes victoryPulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+@keyframes defeatShake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-10px);
+  }
+  75% {
+    transform: translateX(10px);
+  }
+}
+
 .game-over-overlay {
   position: absolute;
   top: 0;

@@ -111,7 +111,7 @@ export class PlayerMeshService {
     // Posizione iniziale
     group.position.set(
       playerData.position?.x || 0,
-      playerData.position?.y || 1,
+      playerData.position?.y || 0,
       playerData.position?.z || 0
     );
 
@@ -390,7 +390,7 @@ export class PlayerMeshService {
     const targetRotation = playerMesh.targetRotation;
 
     const delta = this.getShortestAngleDelta(currentRotation, targetRotation);
-    const lerpFactor = 0.15;
+    const lerpFactor = 0.18; // Ridotto per maggiore fluidità
     const newRotation = currentRotation + delta * lerpFactor;
 
     playerMesh.mesh.rotation.y = newRotation;

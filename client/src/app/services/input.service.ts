@@ -21,14 +21,19 @@ export interface KeysState {
 export class InputService {
   private readonly moveSpeed = 0.2;
   private readonly MAP_RADIUS = 30;
+  private readonly ROTATION_SMOOTH_FACTOR = 0.12; // Fattore di interpolazione per rotazione fluida
 
-  private keys: KeysState = {
+  // Rendo keys pubblico per accesso dallo spettatore
+  public keys: KeysState = {
     w: false,
     a: false,
     s: false,
     d: false,
     space: false
   };
+
+  // Traccia la rotazione corrente per interpolazione fluida
+  private currentRotation: number | null = null;
 
   /**
    * Inizializza i listener per la tastiera.
@@ -111,20 +116,47 @@ export class InputService {
       const dz = newPosition.z - oldPosition.z;
 
       if (Math.abs(dx) > 0.001 || Math.abs(dz) > 0.001) {
-        const rotation = Math.atan2(dx, dz);
+        // Calcola la rotazione target basata sulla direzione del movimento
+        const targetRotation = Math.atan2(dx, dz);
 
-        // Invia movimento al server
+        // Se non abbiamo una rotazione corrente, inizializzala
+        if (this.currentRotation === null) {
+          this.currentRotation = targetRotation;
+        } else {
+          // Interpola smoothly verso la nuova rotazione
+          const delta = this.getShortestAngleDelta(this.currentRotation, targetRotation);
+          this.currentRotation += delta * this.ROTATION_SMOOTH_FACTOR;
+          
+          // Normalizza l'angolo tra -PI e PI
+          this.currentRotation = ((this.currentRotation + Math.PI) % (Math.PI * 2)) - Math.PI;
+        }
+
+        // Invia movimento al server con la rotazione interpolata
         room.send('playerMove', {
           x: newPosition.x,
           z: newPosition.z,
-          rotation: rotation
+          rotation: this.currentRotation
         });
 
-        return rotation;
+        return this.currentRotation;
       }
     }
 
     return null;
+  }
+
+  /**
+   * Calcola la differenza più breve tra due angoli.
+   */
+  private getShortestAngleDelta(from: number, to: number): number {
+    let delta = to - from;
+    delta = ((delta + Math.PI) % (Math.PI * 2)) - Math.PI;
+
+    if (delta < -Math.PI) {
+      delta += Math.PI * 2;
+    }
+
+    return delta;
   }
 
   /**
@@ -140,5 +172,8 @@ export class InputService {
       d: false,
       space: false
     };
+    
+    // Reset rotazione
+    this.currentRotation = null;
   }
 }
