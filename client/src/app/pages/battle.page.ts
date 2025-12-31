@@ -180,12 +180,35 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
     // Setup controlli tastiera usando InputService
     this.inputService.setupKeyboardControls(() => this.attack());
     
-    // Setup debug overlay toggle con tasto `
+    // Setup debug overlay toggle con CTRL + D
     window.addEventListener('keydown', (e) => {
-      if (e.key === '`' || e.key === '~') {
+      if (e.ctrlKey && e.key === 'd') {
+        e.preventDefault(); // Previeni comportamento default del browser
         this.showDebugOverlay = !this.showDebugOverlay;
       }
     });
+    
+    // Setup ping measurement
+    this.startPingMeasurement(room);
+  }
+  
+  /**
+   * Avvia misurazione periodica del ping
+   */
+  private startPingMeasurement(room: any): void {
+    // Invia ping ogni 2 secondi
+    setInterval(() => {
+      const pingStartTime = Date.now();
+      
+      // Invia messaggio ping e attendi pong
+      room.send('ping', { timestamp: pingStartTime });
+      
+      // Ascolta pong (solo una volta per questo ping)
+      const pongListener = room.onMessage.once('pong', (data: { timestamp: number }) => {
+        const pingTime = Date.now() - data.timestamp;
+        this.networkMetrics.recordPing(pingTime);
+      });
+    }, 2000);
   }
 
   ngAfterViewInit() {
