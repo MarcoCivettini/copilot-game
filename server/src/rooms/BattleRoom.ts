@@ -72,6 +72,12 @@ export class BattleRoom extends Room<BattleState> {
       this.handleWeaponSwing(client, message);
     });
 
+    // Gestisce ping measurement per network metrics
+    this.onMessage('ping', (client: Client, message: { timestamp: number }) => {
+      // Risponde immediatamente con pong
+      client.send('pong', { timestamp: message.timestamp });
+    });
+
     // Avvia il countdown
     this.startCountdown();
 
