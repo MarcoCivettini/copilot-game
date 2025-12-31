@@ -30,7 +30,7 @@ export class WeaponHandlerFactory {
 
       case 'SPEAR':
         if (!this.spearHandler) {
-          this.spearHandler = new SpearHandler();
+          this.spearHandler = new SpearHandler(playerMeshService);
         }
         return this.spearHandler;
 

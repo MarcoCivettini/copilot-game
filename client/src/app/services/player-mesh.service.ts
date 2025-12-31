@@ -79,12 +79,33 @@ export class PlayerMeshService {
       weapon.position.set(0.6, 0.3, 0); // Y più basso perché il pivot è alla base
       weapon.rotation.z = 0; // Dritta verticale
     } else if (weaponType === 'SPEAR') {
-      const spearGeometry = new THREE.CylinderGeometry(0.05, 0.05, 1.5, 8);
-      spearGeometry.translate(0, 0.75, 0);
-      const spearMaterial = new THREE.MeshStandardMaterial({ color: 0x8b4513 });
-      weapon = new THREE.Mesh(spearGeometry, spearMaterial);
-      weapon.position.set(0.6, 0.3, 0);
-      weapon.rotation.z = 0;
+      // Gruppo per cilindro + punta
+      weapon = new THREE.Mesh();
+      
+      // Cilindro marrone lungo 2
+      const shaftGeometry = new THREE.CylinderGeometry(0.05, 0.05, 2.0, 8);
+      // Trasla geometria per avere pivot alla base
+      shaftGeometry.translate(0, 1.0, 0); // Metà lunghezza (2.0 / 2 = 1.0)
+      const shaftMaterial = new THREE.MeshStandardMaterial({ color: 0x8b4513 }); // Marrone
+      const shaft = new THREE.Mesh(shaftGeometry, shaftMaterial);
+      shaft.castShadow = true;
+      
+      // Punta conica
+      const tipGeometry = new THREE.ConeGeometry(0.08, 0.3, 8);
+      tipGeometry.translate(0, 2.15, 0); // Posiziona in cima al cilindro (2.0 + 0.15)
+      const tipMaterial = new THREE.MeshStandardMaterial({ color: 0x444444, metalness: 0.8, roughness: 0.2 });
+      const tip = new THREE.Mesh(tipGeometry, tipMaterial);
+      tip.castShadow = true;
+      
+      // Aggiungi entrambi al gruppo weapon
+      weapon.add(shaft);
+      weapon.add(tip);
+      
+      // Posiziona a destra del personaggio come la spada
+      weapon.position.set(0.6, 1.0, 0);
+      weapon.rotation.z = Math.PI / 2; // Ruota per renderla orizzontale
+      weapon.rotation.y = -Math.PI / 2; // Punta in avanti (-90 gradi)
+      weapon.rotation.x = Math.PI; // Flip di 180 gradi
     } else {
       // BOW
       const bowGeometry = new THREE.BoxGeometry(0.1, 0.8, 0.3);
@@ -96,10 +117,14 @@ export class PlayerMeshService {
     weapon.castShadow = true;
     group.add(weapon);
 
-    // Swing trail effect (solo per spada)
+    // Swing trail effect (per spada e lancia)
     let swingTrail: THREE.Mesh | undefined;
     if (weaponType === 'SWORD') {
       swingTrail = this.createSwingTrailEffect();
+      swingTrail.visible = false;
+      weapon.add(swingTrail);
+    } else if (weaponType === 'SPEAR') {
+      swingTrail = this.createSpearTrailEffect();
       swingTrail.visible = false;
       weapon.add(swingTrail);
     }
@@ -140,6 +165,64 @@ export class PlayerMeshService {
       lastUpdateTime: Date.now(),
       isExtrapolating: false
     };
+  }
+
+  /**
+   * Crea l'effetto trail verde per la lancia durante il thrust.
+   */
+  private createSpearTrailEffect(): THREE.Mesh {
+    // Trail lungo tutta la lancia (2.3 per coprire cilindro + punta)
+    const trailGeometry = new THREE.PlaneGeometry(2.3, 0.25);
+    
+    // Shader con colore verde
+    const trailMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 },
+        uOpacity: { value: 1.0 },
+        uColor: { value: new THREE.Color(0x00ff00) } // Verde
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform float uTime;
+        uniform float uOpacity;
+        uniform vec3 uColor;
+        varying vec2 vUv;
+        
+        void main() {
+          // Gradiente lungo la lancia
+          float gradient = 1.0 - vUv.x;
+          
+          // Effetto shimmer animato
+          float shimmer = sin(vUv.x * 12.0 - uTime * 20.0) * 0.5 + 0.5;
+          
+          // Alpha fade verso i bordi
+          float alpha = gradient * uOpacity * (1.0 - abs(vUv.y - 0.5) * 2.0);
+          alpha *= (0.8 + shimmer * 0.2);
+          
+          // Colore verde con effetto glow
+          vec3 finalColor = uColor + vec3(shimmer * 0.3);
+          
+          gl_FragColor = vec4(finalColor, alpha);
+        }
+      `,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    });
+
+    const trail = new THREE.Mesh(trailGeometry, trailMaterial);
+    // Posiziona il trail lungo la lancia
+    trail.position.set(0, 1.15, 0); // Centro della lancia
+    trail.rotation.z = Math.PI / 2; // Allinea con la lancia orizzontale
+    
+    return trail;
   }
 
   /**
@@ -321,11 +404,121 @@ export class PlayerMeshService {
   }
 
   /**
+   * Anima il thrust (affondo) della lancia con effetto trail verde.
+   * La lancia si muove in avanti di circa 0.5 unità.
+   * @param onThrustUpdate callback opzionale chiamato ad ogni frame con le posizioni dell'arma
+   */
+  playSpearThrust(
+    playerMesh: PlayerMesh,
+    onThrustUpdate?: (tipPosition: THREE.Vector3, basePosition: THREE.Vector3) => void
+  ): number {
+    if (playerMesh.weaponType !== 'SPEAR' || !playerMesh.weapon || playerMesh.isSwinging) {
+      return 0;
+    }
+
+    playerMesh.isSwinging = true;
+    const weapon = playerMesh.weapon;
+    const swingTrail = playerMesh.swingTrail;
+
+    // Salva posizione e rotazione iniziali
+    const startPositionX = weapon.position.x;
+    const startPositionY = weapon.position.y;
+    const startPositionZ = weapon.position.z;
+
+    // Parametri animazione - thrust in avanti
+    const thrustDuration = 300; // ms
+    const thrustDistance = 0.5; // Distanza di thrust
+    const startTime = Date.now();
+
+    // Mostra trail verde
+    if (swingTrail) {
+      swingTrail.visible = true;
+    }
+
+    const animate = () => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(elapsed / thrustDuration, 1);
+
+      // Easing: veloce all'inizio, rallenta alla fine (ease-out)
+      const easeProgress = 1 - Math.pow(1 - progress, 2);
+
+      // Thrust in avanti lungo l'asse Z locale
+      // Animazione: va avanti e poi torna indietro
+      let thrustOffset;
+      if (progress < 0.6) {
+        // Fase di thrust in avanti (60% del tempo)
+        thrustOffset = (progress / 0.6) * thrustDistance;
+      } else {
+        // Fase di ritorno (40% del tempo)
+        const returnProgress = (progress - 0.6) / 0.4;
+        thrustOffset = thrustDistance * (1 - returnProgress);
+      }
+
+      weapon.position.z = startPositionZ + thrustOffset;
+
+      // Aggiorna shader del trail
+      if (swingTrail) {
+        const material = swingTrail.material as THREE.ShaderMaterial;
+        material.uniforms['uTime'].value = elapsed / 1000;
+        // Opacità aumenta rapidamente e poi decade
+        material.uniforms['uOpacity'].value = Math.sin(progress * Math.PI);
+      }
+
+      // Callback per inviare le posizioni dell'arma al server per collision detection
+      if (onThrustUpdate && playerMesh.weapon) {
+        playerMesh.mesh.updateMatrixWorld(true);
+        playerMesh.weapon.updateMatrixWorld(true);
+        
+        const tipPos = this.getSpearTipWorldPosition(playerMesh);
+        const basePos = this.getWeaponBaseWorldPosition(playerMesh);
+        if (tipPos && basePos) {
+          onThrustUpdate(tipPos, basePos);
+        }
+      }
+
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      } else {
+        // Reset finale
+        weapon.position.x = startPositionX;
+        weapon.position.y = startPositionY;
+        weapon.position.z = startPositionZ;
+        if (swingTrail) {
+          swingTrail.visible = false;
+        }
+        playerMesh.isSwinging = false;
+      }
+    };
+
+    animate();
+    return thrustDuration;
+  }
+
+  /**
+   * Calcola la posizione world della punta della lancia.
+   */
+  getSpearTipWorldPosition(playerMesh: PlayerMesh): THREE.Vector3 | null {
+    if (!playerMesh.weapon) return null;
+
+    // La punta della lancia è a y = 2.3 (lunghezza totale con cono) dalla base
+    const tipLocalPosition = new THREE.Vector3(0, 2.3, 0);
+    
+    const tipWorldPosition = tipLocalPosition.clone();
+    playerMesh.weapon.localToWorld(tipWorldPosition);
+    
+    return tipWorldPosition;
+  }
+
+  /**
    * Calcola la posizione world della punta dell'arma.
    * Usato per collision detection precisa durante l'animazione.
    */
   getWeaponTipWorldPosition(playerMesh: PlayerMesh): THREE.Vector3 | null {
     if (!playerMesh.weapon) return null;
+
+    if (playerMesh.weaponType === 'SPEAR') {
+      return this.getSpearTipWorldPosition(playerMesh);
+    }
 
     // La punta dell'arma è a y = 1.2 (lunghezza spada) dalla base (pivot)
     // nel sistema di coordinate locale dell'arma
