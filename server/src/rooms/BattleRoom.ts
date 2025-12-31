@@ -13,6 +13,17 @@ interface PlayerInput {
   x: number;
   z: number;
   rotation: number;
+  timestamp?: number; // Timestamp per lag compensation
+}
+
+/**
+ * Snapshot di posizione player per lag compensation
+ */
+interface PositionSnapshot {
+  timestamp: number;
+  position: { x: number; y: number; z: number };
+  rotation: number;
+  hp: number;
 }
 
 /**
@@ -29,6 +40,14 @@ export class BattleRoom extends Room<BattleState> {
   private updateInterval: NodeJS.Timeout | undefined;
   private attackHandler = new AttackHandler();
   private tickCounter = 0; // Contatore per broadcast ottimizzato
+  private broadcastRate = 2; // Broadcast ogni 2 tick (30Hz)
+  
+  // Snapshot history per lag compensation
+  private playerSnapshots = new Map<string, PositionSnapshot[]>();
+  private readonly SNAPSHOT_BUFFER_MS = 1000; // 1 secondo di history
+  
+  // Flag per broadcast critico immediato
+  private needsCriticalBroadcast = false;
 
   onCreate(): void {
     this.setState(new BattleState());
@@ -40,8 +59,8 @@ export class BattleRoom extends Room<BattleState> {
     });
 
     // Gestisce l'attacco del giocatore
-    this.onMessage('playerAttack', (client: Client) => {
-      this.handlePlayerAttack(client);
+    this.onMessage('playerAttack', (client: Client, message: { timestamp?: number }) => {
+      this.handlePlayerAttack(client, message);
     });
 
     // Gestisce l'attacco con hitbox durante l'animazione dello swing
@@ -122,6 +141,9 @@ export class BattleRoom extends Room<BattleState> {
 
     this.tickCounter++;
 
+    // Salva snapshot di TUTTI i player per lag compensation
+    this.savePlayerSnapshots();
+
     // Aggiorna proiettili usando ProjectileService
     const { toRemove, hits } = ProjectileService.updateAllProjectiles(
       this.state.projectiles,
@@ -142,6 +164,7 @@ export class BattleRoom extends Room<BattleState> {
       });
 
       console.log(`[BattleRoom] Player ${hit.playerId} hit by arrow`);
+      this.needsCriticalBroadcast = true; // Hit = broadcast immediato
     });
 
     // Controlla giocatori fuori mappa usando MapService
@@ -158,6 +181,7 @@ export class BattleRoom extends Room<BattleState> {
         });
 
         console.log(`[BattlePage] Player ${player.name} eliminated (out of bounds)`);
+        this.needsCriticalBroadcast = true;
       }
 
       // Reset attacking flag
@@ -166,17 +190,79 @@ export class BattleRoom extends Room<BattleState> {
       }
     });
 
-    // Broadcast player list ogni 6 tick (~10 FPS) per mantenere gli spettatori aggiornati
-    // Questo assicura che i giocatori morti possano continuare a vedere gli altri
-    if (this.tickCounter % 6 === 0) {
-      const aliveCount = Array.from(this.state.players.values()).filter(p => p.isAlive).length;
-      console.log(`[BattleRoom] Broadcasting player list (${aliveCount} alive players)`);
+    // ADAPTIVE BROADCAST: broadcast ogni 2 tick (30Hz) o se evento critico
+    const shouldBroadcast = this.tickCounter % this.broadcastRate === 0 || this.needsCriticalBroadcast;
+    
+    if (shouldBroadcast) {
       this.broadcastPlayerList();
+      this.needsCriticalBroadcast = false; // Reset flag
     }
 
     // Controlla condizione di vittoria
     this.checkVictoryCondition();
   }
+
+  /**
+   * Salva snapshot delle posizioni di tutti i player per lag compensation
+   */
+  private savePlayerSnapshots(): void {
+    const now = Date.now();
+    
+    this.state.players.forEach((player, sessionId) => {
+      if (!player.isAlive) return;
+      
+      if (!this.playerSnapshots.has(sessionId)) {
+        this.playerSnapshots.set(sessionId, []);
+      }
+      
+      const snapshots = this.playerSnapshots.get(sessionId)!;
+      snapshots.push({
+        timestamp: now,
+        position: {
+          x: player.position.x,
+          y: player.position.y,
+          z: player.position.z
+        },
+        rotation: player.rotation,
+        hp: player.hp
+      });
+      
+      // Rimuovi snapshot troppo vecchi
+      const cutoffTime = now - this.SNAPSHOT_BUFFER_MS;
+      while (snapshots.length > 0 && snapshots[0].timestamp < cutoffTime) {
+        snapshots.shift();
+      }
+    });
+  }
+
+  /**
+   * Recupera lo stato di un player a un timestamp specifico (per lag compensation).
+   * Utility function pronta per implementazioni avanzate future.
+   * TODO: Integrare in AttackHandler per lag compensation completa
+   * @internal
+   */
+  /* Commentato temporaneamente - da abilitare quando necessario
+  private getPlayerStateAtTime(sessionId: string, timestamp: number): PositionSnapshot | null {
+    const snapshots = this.playerSnapshots.get(sessionId);
+    if (!snapshots || snapshots.length === 0) {
+      return null;
+    }
+    
+    // Trova snapshot più vicino al timestamp
+    let closest = snapshots[0];
+    let minDiff = Math.abs(snapshots[0].timestamp - timestamp);
+    
+    for (const snapshot of snapshots) {
+      const diff = Math.abs(snapshot.timestamp - timestamp);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closest = snapshot;
+      }
+    }
+    
+    return closest;
+  }
+  */
 
   /**
    * Gestisce il movimento del giocatore
@@ -192,20 +278,21 @@ export class BattleRoom extends Room<BattleState> {
     player.position.z = input.z;
     player.rotation = input.rotation;
 
-    // Broadcast aggiornamento posizione a tutti i client
-    this.broadcastPlayerList();
+    // NON broadcast immediato, lascia che il game loop gestisca il broadcast ottimizzato
+    // Questo riduce il traffico di rete da ~60 msg/sec a ~20 msg/sec
   }
 
   /**
    * Gestisce l'attacco del giocatore
    */
-  private handlePlayerAttack(client: Client): void {
+  private handlePlayerAttack(client: Client, _message: { timestamp?: number }): void {
     const player = this.state.players.get(client.sessionId);
     if (!player || !player.isAlive || !this.state.gameActive) {
       return;
     }
 
     const currentTime = Date.now();
+    // TODO: Usare _message.timestamp per lag compensation avanzata
     const attackResult = this.attackHandler.handleStandardAttack(
       player,
       this.state.players,
@@ -250,6 +337,9 @@ export class BattleRoom extends Room<BattleState> {
 
             console.log(`[BattleRoom] Player ${target.name} eliminated by ${player.name}`);
           }
+          
+          // Evento critico = broadcast immediato
+          this.needsCriticalBroadcast = true;
         }
       });
     }
@@ -264,6 +354,7 @@ export class BattleRoom extends Room<BattleState> {
       tipPosition: { x: number; y: number; z: number };
       basePosition: { x: number; y: number; z: number };
       timestamp: number;
+      attackTimestamp?: number;
     }
   ): void {
     const player = this.state.players.get(client.sessionId);
@@ -308,9 +399,6 @@ export class BattleRoom extends Room<BattleState> {
             damage: weapon.damage
           });
 
-          // Broadcast immediato della lista player aggiornata per sincronizzare l'HP
-          this.broadcastPlayerList();
-
           // Se il target è morto, notifica eliminazione
           if (!target.isAlive) {
             this.broadcast('playerEliminated', {
@@ -319,6 +407,9 @@ export class BattleRoom extends Room<BattleState> {
               reason: 'killed'
             });
           }
+          
+          // Hit = broadcast critico immediato
+          this.needsCriticalBroadcast = true;
         }
       });
     }

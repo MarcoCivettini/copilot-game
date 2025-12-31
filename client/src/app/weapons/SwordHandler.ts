@@ -15,12 +15,15 @@ export class SwordHandler implements IWeaponHandler {
       return;
     }
 
+    const attackTimestamp = Date.now();
+
     // Invia continuamente le posizioni dell'arma durante l'animazione
     this.playerMeshService.playSwordSwing(playerMesh, (tipPos, basePos) => {
       room.send('weaponSwing', {
         tipPosition: { x: tipPos.x, y: tipPos.y, z: tipPos.z },
         basePosition: { x: basePos.x, y: basePos.y, z: basePos.z },
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        attackTimestamp // Timestamp iniziale dell'attacco
       });
     });
   }

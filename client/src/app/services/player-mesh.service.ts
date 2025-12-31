@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import * as THREE from 'three';
+import { PositionSnapshot } from './interpolation.service';
 
 /**
  * Interfaccia per i dati del player
@@ -27,6 +28,14 @@ export interface PlayerMesh {
   weaponType: 'SWORD' | 'SPEAR' | 'BOW';
   swingTrail?: THREE.Mesh;
   isSwinging?: boolean;
+  
+  // Interpolation support
+  interpolationBuffer: PositionSnapshot[];
+  
+  // Dead reckoning support
+  lastKnownVelocity: THREE.Vector3;
+  lastUpdateTime: number;
+  isExtrapolating: boolean;
 }
 
 /**
@@ -125,7 +134,11 @@ export class PlayerMeshService {
       weapon,
       weaponType: weaponType,
       swingTrail,
-      isSwinging: false
+      isSwinging: false,
+      interpolationBuffer: [],
+      lastKnownVelocity: new THREE.Vector3(0, 0, 0),
+      lastUpdateTime: Date.now(),
+      isExtrapolating: false
     };
   }
 
@@ -416,5 +429,56 @@ export class PlayerMeshService {
   updateBillboards(playerMesh: PlayerMesh, camera: THREE.Camera): void {
     playerMesh.healthBar.lookAt(camera.position);
     playerMesh.nameLabel.lookAt(camera.position);
+  }
+
+  /**
+   * Aggiorna velocity tracking per dead reckoning.
+   * Chiamato quando ricevi update dal server.
+   */
+  updateVelocity(playerMesh: PlayerMesh, newPosition: THREE.Vector3): void {
+    const oldPosition = playerMesh.mesh.position;
+    const timeDelta = (Date.now() - playerMesh.lastUpdateTime) / 1000;
+    
+    if (timeDelta > 0) {
+      // Calcola velocità basata su spostamento
+      playerMesh.lastKnownVelocity.copy(newPosition).sub(oldPosition).divideScalar(timeDelta);
+    }
+    
+    playerMesh.lastUpdateTime = Date.now();
+    playerMesh.isExtrapolating = false;
+  }
+
+  /**
+   * Applica dead reckoning se non riceviamo update da tempo.
+   * Ritorna true se è in extrapolation.
+   */
+  applyDeadReckoning(playerMesh: PlayerMesh): boolean {
+    const timeSinceUpdate = Date.now() - playerMesh.lastUpdateTime;
+    const EXTRAPOLATION_THRESHOLD = 150; // ms
+    const MAX_EXTRAPOLATION_TIME = 500; // ms
+    
+    if (timeSinceUpdate > EXTRAPOLATION_THRESHOLD && timeSinceUpdate < MAX_EXTRAPOLATION_TIME) {
+      playerMesh.isExtrapolating = true;
+      
+      // Predici posizione basata su velocità
+      const deltaTime = timeSinceUpdate / 1000;
+      const predictedPosition = playerMesh.mesh.position.clone()
+        .add(playerMesh.lastKnownVelocity.clone().multiplyScalar(deltaTime * 0.1));
+      
+      // Applica predizione con damping
+      playerMesh.mesh.position.lerp(predictedPosition, 0.05);
+      
+      return true;
+    }
+    
+    return false;
+  }
+
+  /**
+   * Aggiorna opacity del nameTag basato su stato extrapolation.
+   */
+  updateNameTagOpacity(playerMesh: PlayerMesh, isExtrapolating: boolean): void {
+    playerMesh.nameLabel.material.opacity = isExtrapolating ? 0.5 : 1.0;
+    playerMesh.nameLabel.material.transparent = true;
   }
 }
