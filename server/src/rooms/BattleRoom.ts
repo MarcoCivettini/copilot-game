@@ -1,10 +1,10 @@
 import { Room, Client } from 'colyseus';
 import { BattleState, Player } from '../schemas/BattleState';
 import { GAME_CONFIG, WeaponType } from '../config/game.config';
-import { CombatService } from '../services/combat.service';
 import { MapService } from '../services/map.service';
 import { PlayerService } from '../services/player.service';
 import { ProjectileService } from '../services/projectile.service';
+import { AttackHandler } from '../weapons/AttackHandler';
 
 /**
  * Messaggi ricevuti dai client
@@ -27,12 +27,7 @@ interface PlayerInput {
 export class BattleRoom extends Room<BattleState> {
   maxClients = GAME_CONFIG.MAX_PLAYERS;
   private updateInterval: NodeJS.Timeout | undefined;
-  private projectileCounter = 0;
-  private activeSwings = new Set<string>(); // Traccia player che stanno swingando
-  private swingHitPlayers = new Map<string, Set<string>>(); // Map<attackerSessionId, Set<victimSessionId>>
-  
-  // Costanti per la gestione dello swing
-  private readonly SWING_CLEANUP_DELAY_MS = 500; // Durata swing (400ms) + margine di sicurezza
+  private attackHandler = new AttackHandler();
 
   onCreate(): void {
     this.setState(new BattleState());
@@ -200,61 +195,52 @@ export class BattleRoom extends Room<BattleState> {
     }
 
     const currentTime = Date.now();
+    const attackResult = this.attackHandler.handleStandardAttack(
+      player,
+      this.state.players,
+      this.state.projectiles,
+      currentTime
+    );
 
-    if (player.weaponType === WeaponType.BOW) {
-      // Crea proiettile usando ProjectileService
-      const projectileId = `projectile_${this.projectileCounter++}`;
-      const projectile = ProjectileService.createProjectile(player, projectileId, currentTime);
+    if (attackResult.projectile && attackResult.projectileId) {
+      // Arco - proiettile creato
+      this.broadcast('projectileCreated', {
+        projectileId: attackResult.projectileId,
+        ownerId: player.sessionId,
+        position: {
+          x: attackResult.projectile.position.x,
+          y: attackResult.projectile.position.y,
+          z: attackResult.projectile.position.z
+        }
+      });
+    } else if (attackResult.hitPlayers.length > 0) {
+      // Mischia - giocatori colpiti
+      attackResult.hitPlayers.forEach(targetId => {
+        const target = this.state.players.get(targetId);
+        if (target) {
+          const weapon = require('../config/game.config').WEAPONS[player.weaponType as WeaponType];
+          this.broadcast('playerHit', {
+            attackerId: player.sessionId,
+            targetId: targetId,
+            damage: weapon.damage,
+            weaponType: player.weaponType
+          });
 
-      if (projectile) {
-        this.state.projectiles.set(projectileId, projectile);
+          console.log(
+            `[BattleRoom] Player ${target.name} hit by ${player.name} with ${player.weaponType}`
+          );
 
-        this.broadcast('projectileCreated', {
-          projectileId,
-          ownerId: player.sessionId,
-          position: {
-            x: projectile.position.x,
-            y: projectile.position.y,
-            z: projectile.position.z
-          }
-        });
-      }
-    } else {
-      // Attacco in mischia
-      const hitPlayers = CombatService.handleMeleeAttack(
-        player,
-        this.state.players,
-        currentTime
-      );
-
-      if (hitPlayers.length > 0) {
-        hitPlayers.forEach(targetId => {
-          const target = this.state.players.get(targetId);
-          if (target) {
-            this.broadcast('playerHit', {
-              attackerId: player.sessionId,
-              targetId: targetId,
-              damage: player.weaponType === WeaponType.SWORD ? 2 : 4,
-              weaponType: player.weaponType
+          if (!target.isAlive) {
+            this.broadcast('playerEliminated', {
+              playerId: targetId,
+              killerId: player.sessionId,
+              reason: 'killed'
             });
 
-            console.log(
-              `[BattleRoom] Player ${target.name} hit by ${player.name} with ${player.weaponType}`
-            );
-
-            // Se il target è morto, notifica eliminazione
-            if (!target.isAlive) {
-              this.broadcast('playerEliminated', {
-                playerId: targetId,
-                killerId: player.sessionId,
-                reason: 'killed'
-              });
-
-              console.log(`[BattleRoom] Player ${target.name} eliminated by ${player.name}`);
-            }
+            console.log(`[BattleRoom] Player ${target.name} eliminated by ${player.name}`);
           }
-        });
-      }
+        }
+      });
     }
   }
 
@@ -279,65 +265,36 @@ export class BattleRoom extends Room<BattleState> {
       return;
     }
 
-    // Controlla se è il primo messaggio dello swing (per il cooldown)
-    const isFirstSwingMessage = !this.activeSwings.has(client.sessionId);
-    
-    if (isFirstSwingMessage) {
-      this.activeSwings.add(client.sessionId);
-      // Inizializza il Set dei player colpiti per questo swing
-      this.swingHitPlayers.set(client.sessionId, new Set<string>());
-      
+    const weaponType = player.weaponType as WeaponType;
+    const isFirstSwing = !this.attackHandler.isSwinging(client.sessionId, weaponType);
+
+    if (isFirstSwing) {
       // Broadcast ai client (escluso mittente) per mostrare l'animazione dello swing
       this.broadcast('weaponSwingStarted', {
         sessionId: client.sessionId,
         weaponType: player.weaponType
       }, { except: client });
-      
-      // Cleanup dopo la durata dello swing
-      setTimeout(() => {
-        this.activeSwings.delete(client.sessionId);
-        this.swingHitPlayers.delete(client.sessionId);
-      }, this.SWING_CLEANUP_DELAY_MS);
     }
 
-    // Usa il nuovo metodo con hitbox dell'arma
-    // Controlla cooldown solo al primo messaggio
-    const hitPlayers = CombatService.handleWeaponHitboxAttack(
+    // Usa l'AttackHandler per gestire l'attacco hitbox
+    const attackResult = this.attackHandler.handleHitboxAttack(
       player,
       message.tipPosition,
       message.basePosition,
-      this.state.players,
-      isFirstSwingMessage // Controlla cooldown solo al primo frame
+      this.state.players
     );
 
-    if (hitPlayers.length > 0) {
-      // Ottieni il Set dei player già colpiti (per reference, non copia)
-      const alreadyHitThisSwing = this.swingHitPlayers.get(client.sessionId);
-      
-      if (!alreadyHitThisSwing) {
-        return;
-      }
-      
-      hitPlayers.forEach(targetId => {
-        // Salta se già colpito in questo swing
-        if (alreadyHitThisSwing.has(targetId)) {
-          return;
-        }
-        
-        // Aggiungi alla lista dei colpiti (modifica il Set nella Map)
-        alreadyHitThisSwing.add(targetId);
-        
+    if (attackResult.hitPlayers.length > 0) {
+      attackResult.hitPlayers.forEach(targetId => {
         const target = this.state.players.get(targetId);
         if (target) {
-          // Applica il danno
-          const damage = player.weaponType === WeaponType.SWORD ? 2 : 4;
-          CombatService.applyDamage(target, damage);
+          const weapon = require('../config/game.config').WEAPONS[weaponType];
           
           // Broadcast usando il messaggio che il client ascolta
           this.broadcast('playerAttacked', {
             attackerId: player.sessionId,
             targetId: targetId,
-            damage: damage
+            damage: weapon.damage
           });
 
           // Broadcast immediato della lista player aggiornata per sincronizzare l'HP
