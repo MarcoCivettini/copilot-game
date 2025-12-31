@@ -51,6 +51,6 @@ export const GAME_CONFIG = {
   MAP_RADIUS: 30,
   COUNTDOWN_DURATION: 5, // secondi
   END_GAME_DELAY: 10000, // millisecondi (10 secondi)
-  PLAYER_SPEED: 5,
+  PLAYER_SPEED: 3.6,
   TICK_RATE: 60 // aggiornamenti al secondo
 };

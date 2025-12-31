@@ -7,7 +7,7 @@ import * as THREE from 'three';
  */
 @Injectable({ providedIn: 'root' })
 export class CameraService {
-  private readonly cameraOffset = new THREE.Vector3(0, 12, 20);
+  private readonly cameraOffset = new THREE.Vector3(0, 12, 14);
   private readonly cameraLookAtOffset = new THREE.Vector3(0, 1, 0);
 
   /**

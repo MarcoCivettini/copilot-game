@@ -70,13 +70,54 @@ export class PlayerMeshService {
     let weapon: THREE.Mesh;
     
     if (weaponType === 'SWORD') {
-      const swordGeometry = new THREE.BoxGeometry(0.15, 1.2, 0.05);
-      // Sposta la geometria in modo che il pivot sia alla base (impugnatura)
-      swordGeometry.translate(0, 0.6, 0); // Metà altezza (1.2 / 2 = 0.6)
-      const swordMaterial = new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.8, roughness: 0.2 });
-      weapon = new THREE.Mesh(swordGeometry, swordMaterial);
-      // Posiziona a destra del personaggio, il pivot è ora alla base
-      weapon.position.set(0.6, 0.3, 0); // Y più basso perché il pivot è alla base
+      // Crea un gruppo per la spada composita
+      weapon = new THREE.Mesh();
+      
+      // 1. Manico (handle) - marrone
+      const handleGeometry = new THREE.CylinderGeometry(0.05, 0.06, 0.25, 8);
+      handleGeometry.translate(0, 0.125, 0); // Pivot alla base
+      const handleMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x5d4037, // Marrone scuro
+        roughness: 0.8
+      });
+      const handle = new THREE.Mesh(handleGeometry, handleMaterial);
+      handle.castShadow = true;
+      weapon.add(handle);
+      
+      // 2. Guardia (crossguard) - grigia scura
+      const guardGeometry = new THREE.BoxGeometry(0.3, 0.04, 0.08);
+      guardGeometry.translate(0, 0.27, 0); // Appena sopra il manico
+      const guardMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x3a3a3a, // Grigio scuro
+        metalness: 0.7,
+        roughness: 0.3
+      });
+      const guard = new THREE.Mesh(guardGeometry, guardMaterial);
+      guard.castShadow = true;
+      weapon.add(guard);
+      
+      // 3. Base della lama (blade base) - argentata
+      const bladeBaseGeometry = new THREE.BoxGeometry(0.08, 0.7, 0.04);
+      bladeBaseGeometry.translate(0, 0.65, 0); // Sopra la guardia
+      const bladeMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0xc0c0c0, // Argento
+        metalness: 0.9,
+        roughness: 0.1
+      });
+      const bladeBase = new THREE.Mesh(bladeBaseGeometry, bladeMaterial);
+      bladeBase.castShadow = true;
+      weapon.add(bladeBase);
+      
+      // 4. Punta della lama (blade tip) - piramidale
+      const tipGeometry = new THREE.ConeGeometry(0.04, 0.2, 4);
+      tipGeometry.rotateY(Math.PI / 4); // Ruota di 45° per allineare gli spigoli
+      tipGeometry.translate(0, 1.1, 0); // In cima alla lama
+      const tip = new THREE.Mesh(tipGeometry, bladeMaterial);
+      tip.castShadow = true;
+      weapon.add(tip);
+      
+      // Posiziona a destra del personaggio, il pivot è alla base
+      weapon.position.set(0.6, 0.3, 0);
       weapon.rotation.z = 0; // Dritta verticale
     } else if (weaponType === 'SPEAR') {
       // Gruppo per cilindro + punta
@@ -596,7 +637,7 @@ export class PlayerMeshService {
     const targetRotation = playerMesh.targetRotation;
 
     const delta = this.getShortestAngleDelta(currentRotation, targetRotation);
-    const lerpFactor = 0.18; // Ridotto per maggiore fluidità
+    const lerpFactor = 0.18;
     const newRotation = currentRotation + delta * lerpFactor;
 
     playerMesh.mesh.rotation.y = newRotation;
