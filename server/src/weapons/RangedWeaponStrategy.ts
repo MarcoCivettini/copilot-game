@@ -22,6 +22,10 @@ export class RangedWeaponStrategy implements IWeaponStrategy {
   ): string[] {
     // Per armi ranged, non ritorniamo hit immediati
     // I colpi vengono gestiti tramite proiettili
+    // Evitiamo warning sui parametri non usati
+    void attacker;
+    void allPlayers;
+    void currentTime;
     return [];
   }
 

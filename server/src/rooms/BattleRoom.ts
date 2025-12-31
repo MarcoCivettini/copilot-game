@@ -1,6 +1,6 @@
 import { Room, Client } from 'colyseus';
 import { BattleState, Player } from '../schemas/BattleState';
-import { GAME_CONFIG, WeaponType } from '../config/game.config';
+import { GAME_CONFIG, WeaponType, WEAPONS } from '../config/game.config';
 import { MapService } from '../services/map.service';
 import { PlayerService } from '../services/player.service';
 import { ProjectileService } from '../services/projectile.service';
@@ -218,7 +218,7 @@ export class BattleRoom extends Room<BattleState> {
       attackResult.hitPlayers.forEach(targetId => {
         const target = this.state.players.get(targetId);
         if (target) {
-          const weapon = require('../config/game.config').WEAPONS[player.weaponType as WeaponType];
+          const weapon = WEAPONS[player.weaponType as WeaponType];
           this.broadcast('playerHit', {
             attackerId: player.sessionId,
             targetId: targetId,
@@ -288,7 +288,7 @@ export class BattleRoom extends Room<BattleState> {
       attackResult.hitPlayers.forEach(targetId => {
         const target = this.state.players.get(targetId);
         if (target) {
-          const weapon = require('../config/game.config').WEAPONS[weaponType];
+          const weapon = WEAPONS[weaponType];
           
           // Broadcast usando il messaggio che il client ascolta
           this.broadcast('playerAttacked', {

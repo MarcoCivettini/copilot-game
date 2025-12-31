@@ -30,6 +30,10 @@ export class HitboxWeaponStrategy implements IWeaponStrategy {
   ): string[] {
     // Questo metodo non è utilizzato per hitbox weapons
     // La logica è gestita in handleHitboxAttack
+    // Evitiamo warning sui parametri non usati
+    void attacker;
+    void allPlayers;
+    void currentTime;
     return [];
   }
 

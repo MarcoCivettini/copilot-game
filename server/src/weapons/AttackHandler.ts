@@ -1,5 +1,5 @@
 import { Player, Projectile } from '../schemas/BattleState';
-import { WeaponType } from '../config/game.config';
+import { WeaponType, WEAPONS } from '../config/game.config';
 import { WeaponStrategyFactory } from './WeaponStrategyFactory';
 import { RangedWeaponStrategy } from './RangedWeaponStrategy';
 import { HitboxWeaponStrategy } from './HitboxWeaponStrategy';
@@ -94,7 +94,7 @@ export class AttackHandler {
     newHits.forEach(targetId => {
       const target = allPlayers.get(targetId);
       if (target) {
-        const weapon = require('../config/game.config').WEAPONS[weaponType];
+        const weapon = WEAPONS[weaponType];
         CombatService.applyDamage(target, weapon.damage);
       }
     });
