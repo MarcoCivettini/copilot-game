@@ -26,7 +26,8 @@ export class WeaponStrategyFactory {
 
   /**
    * Crea una strategia hitbox per il tipo di arma specificato.
-   * Non usa Singleton perché mantiene stato per gli swing attivi.
+   * Ogni tipo di arma ottiene la propria istanza per mantenere stato separato
+   * per gli swing attivi (non è un vero Singleton).
    */
   static createHitboxStrategy(weaponType: WeaponType): HitboxWeaponStrategy {
     if (!this.hitboxStrategies.has(weaponType)) {

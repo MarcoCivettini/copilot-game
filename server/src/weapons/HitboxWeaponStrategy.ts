@@ -24,16 +24,12 @@ export class HitboxWeaponStrategy implements IWeaponStrategy {
   }
 
   handleAttack(
-    attacker: Player,
-    allPlayers: Map<string, Player>,
-    currentTime: number
+    _attacker: Player,
+    _allPlayers: Map<string, Player>,
+    _currentTime: number
   ): string[] {
     // Questo metodo non è utilizzato per hitbox weapons
     // La logica è gestita in handleHitboxAttack
-    // Evitiamo warning sui parametri non usati
-    void attacker;
-    void allPlayers;
-    void currentTime;
     return [];
   }
 

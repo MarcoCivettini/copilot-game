@@ -16,16 +16,12 @@ export class RangedWeaponStrategy implements IWeaponStrategy {
   }
 
   handleAttack(
-    attacker: Player,
-    allPlayers: Map<string, Player>,
-    currentTime: number
+    _attacker: Player,
+    _allPlayers: Map<string, Player>,
+    _currentTime: number
   ): string[] {
     // Per armi ranged, non ritorniamo hit immediati
     // I colpi vengono gestiti tramite proiettili
-    // Evitiamo warning sui parametri non usati
-    void attacker;
-    void allPlayers;
-    void currentTime;
     return [];
   }
 

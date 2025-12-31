@@ -1,7 +1,6 @@
 import { Player, Projectile } from '../schemas/BattleState';
 import { WeaponType, WEAPONS } from '../config/game.config';
 import { WeaponStrategyFactory } from './WeaponStrategyFactory';
-import { RangedWeaponStrategy } from './RangedWeaponStrategy';
 import { HitboxWeaponStrategy } from './HitboxWeaponStrategy';
 import { CombatService } from '../services/combat.service';
 
@@ -43,7 +42,7 @@ export class AttackHandler {
     currentTime: number
   ): AttackResult {
     if (attacker.weaponType === WeaponType.BOW) {
-      const rangedStrategy = WeaponStrategyFactory.createRangedStrategy() as RangedWeaponStrategy;
+      const rangedStrategy = WeaponStrategyFactory.createRangedStrategy();
       const projectile = rangedStrategy.createProjectile(attacker, projectiles, currentTime);
       
       if (projectile) {
