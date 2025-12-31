@@ -7,6 +7,8 @@ import { PlayerMeshService, PlayerData, PlayerMesh } from '../services/player-me
 import { InputService } from '../services/input.service';
 import { CameraService } from '../services/camera.service';
 import { WeaponHandlerFactory } from '../weapons/WeaponHandlerFactory';
+import { InterpolationService } from '../services/interpolation.service';
+import { NetworkMetricsService, NetworkStats } from '../services/network-metrics.service';
 import * as THREE from 'three';
 
 @Component({
@@ -43,13 +45,27 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
   private myPlayer?: THREE.Group;
   private spectatorGhost?: THREE.Group; // Oggetto invisibile per modalità spettatore
 
+  // Network metrics e debug
+  showDebugOverlay = false;
+  networkStats: NetworkStats = {
+    avgFPS: 0,
+    avgPing: 0,
+    avgPredictionError: 0,
+    packetLossPercent: 0,
+    serverTickRate: 60,
+    playersInterpolating: 0,
+    totalPlayers: 0
+  };
+
   constructor(
     private colyseus: ColyseusService,
     private router: Router,
     private sceneService: ThreeJsSceneService,
     private playerMeshService: PlayerMeshService,
     private inputService: InputService,
-    private cameraService: CameraService
+    private cameraService: CameraService,
+    private interpolationService: InterpolationService,
+    private networkMetrics: NetworkMetricsService
   ) {}
 
   ngOnInit() {
@@ -163,6 +179,13 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
 
     // Setup controlli tastiera usando InputService
     this.inputService.setupKeyboardControls(() => this.attack());
+    
+    // Setup debug overlay toggle con tasto `
+    window.addEventListener('keydown', (e) => {
+      if (e.key === '`' || e.key === '~') {
+        this.showDebugOverlay = !this.showDebugOverlay;
+      }
+    });
   }
 
   ngAfterViewInit() {
@@ -232,21 +255,37 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
       }
     }
 
-    // Aggiorna posizione solo se non è il mio giocatore
-    if (sessionId !== this.myPlayerId && playerData.position) {
-      playerMesh.mesh.position.set(
-        playerData.position.x, 
-        playerData.position.y || 0, 
+    // Aggiorna posizione
+    if (playerData.position) {
+      const newPosition = new THREE.Vector3(
+        playerData.position.x,
+        playerData.position.y || 0,
         playerData.position.z
       );
       
-      if (playerData.rotation !== undefined) {
-        playerMesh.targetRotation = playerData.rotation;
+      // Se è il mio giocatore: usa riconciliazione server
+      if (sessionId === this.myPlayerId && !this.isDead) {
+        const predictionError = this.inputService.reconcilePosition(
+          playerMesh.mesh,
+          newPosition
+        );
+        
+        // Traccia errore di predizione per debug
+        this.networkMetrics.recordPredictionError(predictionError);
+      } else {
+        // Altri giocatori: usa interpolazione
+        this.interpolationService.addSnapshot(playerMesh.interpolationBuffer, {
+          timestamp: Date.now(),
+          position: newPosition,
+          rotation: playerData.rotation || 0
+        });
+        
+        // Aggiorna velocity per dead reckoning
+        this.playerMeshService.updateVelocity(playerMesh, newPosition);
       }
       
-      if (this.isDead) {
-        console.log('[BattlePage] [SPECTATOR] Updated player:', playerData.name, 
-          'pos:', playerData.position.x.toFixed(1), playerData.position.z.toFixed(1));
+      if (playerData.rotation !== undefined) {
+        playerMesh.targetRotation = playerData.rotation;
       }
     }
 
@@ -259,12 +298,15 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
   private animate = () => {
     this.animationId = requestAnimationFrame(this.animate);
     
+    // Aggiorna metriche FPS
+    this.networkMetrics.updateFrame();
+    
     // Se sono morto, muovi il fantasma spettatore invece del player
     if (this.isDead && this.spectatorGhost) {
       // Movimento fantasma (non invia messaggi al server)
       this.updateSpectatorMovement(this.spectatorGhost);
     } else if (this.myPlayer && !this.isDead) {
-      // Aggiorna movimento del giocatore normale
+      // Aggiorna movimento del giocatore normale (client-side prediction)
       const rotation = this.inputService.updatePlayerMovement(
         this.myPlayer,
         this.colyseus.getRoom()
@@ -279,11 +321,35 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
       }
     }
     
-    // Interpola rotazione e aggiorna billboards per tutti i player
-    this.playerMeshes.forEach((playerMesh) => {
+    // Interpola posizione e rotazione per tutti i player (tranne il mio)
+    let playersInterpolating = 0;
+    this.playerMeshes.forEach((playerMesh, sessionId) => {
+      // Per altri giocatori: usa interpolazione
+      if (sessionId !== this.myPlayerId) {
+        const interpolatedState = this.interpolationService.getInterpolatedState(
+          playerMesh.interpolationBuffer
+        );
+        
+        if (interpolatedState) {
+          playerMesh.mesh.position.copy(interpolatedState.position);
+          playerMesh.targetRotation = interpolatedState.rotation;
+          playersInterpolating++;
+        } else {
+          // Nessun dato di interpolazione, prova dead reckoning
+          const isExtrapolating = this.playerMeshService.applyDeadReckoning(playerMesh);
+          this.playerMeshService.updateNameTagOpacity(playerMesh, isExtrapolating);
+        }
+      }
+      
+      // Interpola rotazione per tutti i player
       this.playerMeshService.interpolateRotation(playerMesh);
+      
+      // Aggiorna billboards
       this.playerMeshService.updateBillboards(playerMesh, this.camera);
     });
+    
+    // Aggiorna statistiche interpolazione
+    this.networkMetrics.updateInterpolationStats(playersInterpolating, this.playerMeshes.size);
     
     // Aggiorna camera usando CameraService
     if (this.isDead && this.spectatorGhost) {
@@ -292,6 +358,11 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
     } else if (this.myPlayer) {
       // Modalità normale, segui il player
       this.cameraService.updateThirdPersonCamera(this.camera, this.myPlayer);
+    }
+    
+    // Aggiorna statistiche per debug overlay
+    if (this.showDebugOverlay) {
+      this.networkStats = this.networkMetrics.getStats();
     }
     
     this.renderer.render(this.scene, this.camera);

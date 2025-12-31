@@ -14,7 +14,46 @@
     </div>
     
     <div class="hud-controls">
-      <div class="control-hint">🎮 WASD - Movimento | SPAZIO - Attacco</div>
+      <div class="control-hint">🎮 WASD - Movimento | SPAZIO - Attacco | ` - Debug</div>
+    </div>
+  </div>
+
+  <!-- Debug overlay -->
+  <div class="debug-overlay" *ngIf="showDebugOverlay && !isGameOver">
+    <div class="debug-header">🔍 Network Debug</div>
+    <div class="debug-metrics">
+      <div class="metric">
+        <span class="metric-label">FPS:</span>
+        <span class="metric-value" [class.critical]="networkStats.avgFPS < 30">
+          {{ networkStats.avgFPS }}
+        </span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Server:</span>
+        <span class="metric-value">{{ networkStats.serverTickRate }}Hz</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Ping:</span>
+        <span class="metric-value" [class.warning]="networkStats.avgPing > 100" [class.critical]="networkStats.avgPing > 150">
+          {{ networkStats.avgPing }}ms
+        </span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Loss:</span>
+        <span class="metric-value" [class.warning]="networkStats.packetLossPercent > 2" [class.critical]="networkStats.packetLossPercent > 5">
+          {{ networkStats.packetLossPercent }}%
+        </span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Pred Error:</span>
+        <span class="metric-value" [class.warning]="networkStats.avgPredictionError > 0.5">
+          {{ networkStats.avgPredictionError.toFixed(2) }}u
+        </span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Interpolating:</span>
+        <span class="metric-value">{{ networkStats.playersInterpolating }}/{{ networkStats.totalPlayers - 1 }}</span>
+      </div>
     </div>
   </div>
 
