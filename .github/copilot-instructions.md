@@ -7,6 +7,9 @@ Multiplayer Battle Royale game (max 16 players) con architettura client-server:
 - **Database**: PostgreSQL con Prisma ORM (configurato ma non ancora utilizzato attivamente)
 - **Monorepo**: workspace npm con `server/` e `client/` come sottoprogetti
 
+Always use Context7 MCP when I need library/API documentation, code generation, setup or configuration steps without me having to explicitly ask.
+
+
 ## Quick Start Commands
 ```bash
 # Installa tutto
