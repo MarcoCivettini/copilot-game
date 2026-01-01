@@ -3,15 +3,24 @@
   <form (ngSubmit)="joinLobby()">
     <input type="text" [(ngModel)]="playerName" name="playerName" placeholder="Nome giocatore" required />
     <div class="weapon-select">
-      <label>
-        <input type="radio" [(ngModel)]="weapon" name="weapon" value="sword" /> Spada
-      </label>
-      <label>
-        <input type="radio" [(ngModel)]="weapon" name="weapon" value="spear" /> Lancia
-      </label>
-      <label>
-        <input type="radio" [(ngModel)]="weapon" name="weapon" value="bow" /> Arco
-      </label>
+      <div class="weapon-option" [class.selected]="weapon === 'sword'" (click)="selectWeapon('sword')">
+        <div class="weapon-image-box">
+          <img src="https://github.com/user-attachments/assets/3d49359d-7017-4c55-86db-7381f09c64ae" alt="Spada" />
+        </div>
+        <span class="weapon-name">Spada</span>
+      </div>
+      <div class="weapon-option" [class.selected]="weapon === 'spear'" (click)="selectWeapon('spear')">
+        <div class="weapon-image-box">
+          <img src="https://github.com/user-attachments/assets/55c83087-4998-46d4-9dae-9d0949bd0f06" alt="Lancia" />
+        </div>
+        <span class="weapon-name">Lancia</span>
+      </div>
+      <div class="weapon-option" [class.selected]="weapon === 'bow'" (click)="selectWeapon('bow')">
+        <div class="weapon-image-box">
+          <img src="https://github.com/user-attachments/assets/530aed88-41b0-415e-87a3-d98a88d446a5" alt="Arco" />
+        </div>
+        <span class="weapon-name">Arco</span>
+      </div>
     </div>
     <button type="submit">Entra in lobby</button>
     <div class="error" *ngIf="error">{{ error }}</div>

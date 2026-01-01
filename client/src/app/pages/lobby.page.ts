@@ -77,6 +77,15 @@ export class LobbyPage implements OnInit, OnDestroy {
     return icons[weaponType.toUpperCase()] || '🗡️';
   }
 
+  getWeaponImage(weaponType: string): string {
+    const images: { [key: string]: string } = {
+      'SWORD': 'https://github.com/user-attachments/assets/3d49359d-7017-4c55-86db-7381f09c64ae',
+      'SPEAR': 'https://github.com/user-attachments/assets/55c83087-4998-46d4-9dae-9d0949bd0f06',
+      'BOW': 'https://github.com/user-attachments/assets/530aed88-41b0-415e-87a3-d98a88d446a5'
+    };
+    return images[weaponType.toUpperCase()] || '';
+  }
+
   startGame() {
     const room = this.colyseus.getRoom();
     if (room) {
