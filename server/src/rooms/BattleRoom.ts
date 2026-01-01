@@ -410,7 +410,7 @@ export class BattleRoom extends Room<BattleState> {
           x: Math.sin(player.rotation),
           z: Math.cos(player.rotation)
         },
-        speed: weapon.projectileSpeed || 1.714,
+        speed: weapon.projectileSpeed || 12,
         damage: weapon.damage,
         distanceTraveled: 0,
         maxDistance: weapon.range
@@ -454,7 +454,7 @@ export class BattleRoom extends Room<BattleState> {
           x: proj.directionX || Math.sin(player.rotation),
           z: proj.directionZ || Math.cos(player.rotation)
         },
-        speed: proj.speed || (WEAPONS[WeaponType.BOW].projectileSpeed || 1.714),
+        speed: proj.speed || (WEAPONS[WeaponType.BOW].projectileSpeed || 12),
         damage: proj.damage || WEAPONS[WeaponType.BOW].damage,
         distanceTraveled: proj.distanceTraveled || 0,
         maxDistance: proj.range || WEAPONS[WeaponType.BOW].range

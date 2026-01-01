@@ -44,7 +44,7 @@ export class ProjectileService {
     projectile.directionZ = Math.cos(shooter.rotation);
     projectile.damage = weapon.damage;
     // Velocità del proiettile (unità/sec) - usa valore in config se presente
-    projectile.speed = (weapon as any).projectileSpeed ?? 10;
+    projectile.speed = (weapon as any).projectileSpeed ?? 12;
 
     projectile.damage = weapon.damage;
     projectile.range = weapon.range;

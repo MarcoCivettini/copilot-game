@@ -57,7 +57,7 @@ export class RangedWeaponStrategy implements IWeaponStrategy {
 
     projectile.directionX = Math.sin(shooter.rotation);
     projectile.directionZ = Math.cos(shooter.rotation);
-    projectile.speed = (weapon as any).projectileSpeed ?? 1.714;
+    projectile.speed = (weapon as any).projectileSpeed ?? 12;
     projectile.damage = weapon.damage;
     projectile.range = weapon.range;
     projectile.distanceTraveled = 0;
