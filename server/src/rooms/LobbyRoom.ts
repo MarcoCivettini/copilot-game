@@ -25,7 +25,7 @@ export class LobbyRoom extends Room<LobbyState> {
 
   onCreate(): void {
     this.setState(new LobbyState());
-    console.log(`[LobbyRoom] Room ${this.roomId} created`);
+    console.info(`[LobbyRoom] Room ${this.roomId} created`);
 
     // Gestisce la richiesta di avvio partita
     this.onMessage('startGame', (client: Client) => {
@@ -39,12 +39,12 @@ export class LobbyRoom extends Room<LobbyState> {
   }
 
   onJoin(client: Client, options: JoinLobbyMessage): void {
-    console.log(`[LobbyRoom] Client ${client.sessionId} joined`);
+    console.info(`[LobbyRoom] Client ${client.sessionId} joined`);
 
     // Valida input usando ValidationService
     const validation = ValidationService.validateJoinData(options);
     if (!validation.valid) {
-      console.error('[LobbyRoom] Invalid join options:', validation.error);
+      console.warn('[LobbyRoom] Invalid join options:', validation.error);
       client.error(400, validation.error || 'Dati non validi');
       return;
     }
@@ -59,7 +59,7 @@ export class LobbyRoom extends Room<LobbyState> {
     this.state.players.set(client.sessionId, player);
     this.state.playerCount = this.state.players.size;
 
-    console.log(
+    console.debug(
       `[LobbyRoom] Player ${player.name} joined with weapon ${player.weaponType}. Total players: ${this.state.playerCount}`
     );
 
@@ -68,7 +68,7 @@ export class LobbyRoom extends Room<LobbyState> {
   }
 
   onLeave(client: Client, consented: boolean): void {
-    console.log(
+    console.info(
       `[LobbyRoom] Client ${client.sessionId} left (consented: ${consented})`
     );
 
@@ -85,7 +85,7 @@ export class LobbyRoom extends Room<LobbyState> {
   }
 
   onDispose(): void {
-    console.log(`[LobbyRoom] Room ${this.roomId} disposed`);
+    console.info(`[LobbyRoom] Room ${this.roomId} disposed`);
   }
 
   /**
@@ -109,7 +109,7 @@ export class LobbyRoom extends Room<LobbyState> {
     });
 
     this.broadcast('playerList', { players: playersList });
-    console.log(`[LobbyRoom] Broadcasted player list with ${playersList.length} players`);
+    console.debug(`[LobbyRoom] Broadcasted player list with ${playersList.length} players`);
   }
 
   /**

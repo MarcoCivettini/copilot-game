@@ -3,7 +3,6 @@ import { BattleState, Player } from '../schemas/BattleState';
 import { GAME_CONFIG, WeaponType, WEAPONS } from '../config/game.config';
 import { MapService } from '../services/map.service';
 import { PlayerService } from '../services/player.service';
-import { ProjectileService } from '../services/projectile.service';
 import { AttackHandler } from '../weapons/AttackHandler';
 
 /**
@@ -49,9 +48,30 @@ export class BattleRoom extends Room<BattleState> {
   // Flag per broadcast critico immediato
   private needsCriticalBroadcast = false;
 
+  // NUOVO: Gestione proiettili semplificata con messaggi
+  /**
+   * Message-based projectile store (server-authoritative).
+   * Deprecated: previous schema-based `ProjectileService` was removed
+   * in favor of an explicit message flow: the server keeps `activeProjectiles`
+   * and broadcasts `projectileSpawned`, `projectileUpdate`, `projectileRemoved`.
+   * Keep this structure minimal and authoritative — do not attempt to
+   * mirror it into the Colyseus `state` MapSchema to avoid nested-schema sync issues.
+   */
+  private activeProjectiles = new Map<string, {
+    id: string;
+    ownerId: string;
+    position: { x: number; y: number; z: number };
+    direction: { x: number; z: number };
+    speed: number;
+    damage: number;
+    distanceTraveled: number;
+    maxDistance: number;
+  }>();
+  private projectileCounter = 0;
+
   onCreate(): void {
     this.setState(new BattleState());
-    console.log(`[BattleRoom] Room ${this.roomId} created`);
+    console.info(`[BattleRoom] Room ${this.roomId} created`);
 
     // Gestisce il movimento del giocatore
     this.onMessage('playerMove', (client: Client, message: PlayerInput) => {
@@ -59,8 +79,8 @@ export class BattleRoom extends Room<BattleState> {
     });
 
     // Gestisce l'attacco del giocatore
-    this.onMessage('playerAttack', (client: Client, message: { timestamp?: number }) => {
-      this.handlePlayerAttack(client, message);
+    this.onMessage('playerAttack', (client: Client) => {
+      this.handlePlayerAttack(client);
     });
 
     // Gestisce l'attacco con hitbox durante l'animazione dello swing
@@ -107,7 +127,7 @@ export class BattleRoom extends Room<BattleState> {
 
     this.state.players.set(client.sessionId, player);
 
-    console.log(`[BattleRoom] Player ${options.name} spawned at (${spawnPosition.x}, ${spawnPosition.z})`);
+    console.debug(`[BattleRoom] Player ${options.name} spawned at (${spawnPosition.x}, ${spawnPosition.z})`);
 
     // Invia la lista completa dei giocatori al client appena entrato
     this.sendPlayerListToClient(client);
@@ -117,7 +137,7 @@ export class BattleRoom extends Room<BattleState> {
   }
 
   onLeave(client: Client, consented: boolean): void {
-    console.log(`[BattleRoom] Client ${client.sessionId} left (consented: ${consented})`);
+    console.info(`[BattleRoom] Client ${client.sessionId} left (consented: ${consented})`);
 
     const player = this.state.players.get(client.sessionId);
     if (player) {
@@ -134,44 +154,34 @@ export class BattleRoom extends Room<BattleState> {
     if (this.updateInterval) {
       clearInterval(this.updateInterval);
     }
-    console.log(`[BattleRoom] Room ${this.roomId} disposed`);
+    console.info(`[BattleRoom] Room ${this.roomId} disposed`);
   }
 
   /**
    * Game loop principale
    */
   private update(deltaTime: number): void {
+    this.tickCounter++;
+
+    // Aggiorna proiettili SEMPRE (anche durante countdown)
+    this.updateProjectiles(deltaTime / 1000); // converti ms in secondi
+
     if (!this.state.gameActive || this.state.gameEnded) {
       return;
     }
 
-    this.tickCounter++;
+    // Debug: log ogni 60 tick per verificare deltaTime e proiettili attivi
+    try {
+      if (this.tickCounter % 60 === 0) {
+        // occasional debug information
+        console.debug(`[BattleRoom] tick=${this.tickCounter} deltaTime=${deltaTime.toFixed(4)} activeProjectiles=${this.activeProjectiles.size}`);
+      }
+    } catch (e) {
+      console.debug('[BattleRoom] update tick debug failed', e);
+    }
 
     // Salva snapshot di TUTTI i player per lag compensation
     this.savePlayerSnapshots();
-
-    // Aggiorna proiettili usando ProjectileService
-    const { toRemove, hits } = ProjectileService.updateAllProjectiles(
-      this.state.projectiles,
-      this.state.players,
-      deltaTime / 1000
-    );
-
-    // Rimuovi proiettili
-    toRemove.forEach(id => this.state.projectiles.delete(id));
-
-    // Notifica colpi
-    hits.forEach(hit => {
-      this.broadcast('playerHit', {
-        attackerId: this.state.projectiles.get(hit.projectileId)?.ownerId || '',
-        targetId: hit.playerId,
-        damage: hit.damage,
-        weaponType: WeaponType.BOW
-      });
-
-      console.log(`[BattleRoom] Player ${hit.playerId} hit by arrow`);
-      this.needsCriticalBroadcast = true; // Hit = broadcast immediato
-    });
 
     // Controlla giocatori fuori mappa usando MapService
     this.state.players.forEach((player, playerId) => {
@@ -185,8 +195,7 @@ export class BattleRoom extends Room<BattleState> {
           playerId: playerId,
           reason: 'out_of_bounds'
         });
-
-        console.log(`[BattlePage] Player ${player.name} eliminated (out of bounds)`);
+        console.info(`[BattleRoom] Player ${player.name} eliminated (out of bounds)`);
         this.needsCriticalBroadcast = true;
       }
 
@@ -206,6 +215,80 @@ export class BattleRoom extends Room<BattleState> {
 
     // Controlla condizione di vittoria
     this.checkVictoryCondition();
+  }
+
+  /**
+   * Aggiorna tutti i proiettili attivi
+   */
+  private updateProjectiles(deltaTime: number): void {
+    const projectilesToRemove: string[] = [];
+
+    this.activeProjectiles.forEach((projectile, id) => {
+      // Calcola movimento
+      const distance = projectile.speed * deltaTime;
+      projectile.position.x += projectile.direction.x * distance;
+      projectile.position.z += projectile.direction.z * distance;
+      projectile.distanceTraveled += distance;
+
+      // Controlla collisioni con giocatori
+      let hitSomeone = false;
+      this.state.players.forEach((player) => {
+        if (player.sessionId === projectile.ownerId || !player.isAlive) return;
+        
+        const dx = projectile.position.x - player.position.x;
+        const dz = projectile.position.z - player.position.z;
+        const distToPlayer = Math.sqrt(dx * dx + dz * dz);
+        
+        if (distToPlayer < 0.5) { // Raggio collisione
+          // Colpito!
+          player.hp = Math.max(0, player.hp - projectile.damage);
+          if (player.hp <= 0) {
+            player.isAlive = false;
+          }
+          
+          this.broadcast('playerHit', {
+            attackerId: projectile.ownerId,
+            targetId: player.sessionId,
+            damage: projectile.damage,
+            weaponType: WeaponType.BOW
+          });
+          
+          hitSomeone = true;
+          projectilesToRemove.push(id);
+          console.log(`[BattleRoom] Arrow ${id} hit ${player.name}`);
+        }
+      });
+
+      if (hitSomeone) return;
+
+      // Controlla se ha superato la distanza massima
+      if (projectile.distanceTraveled >= projectile.maxDistance) {
+        projectilesToRemove.push(id);
+        console.debug(`[BattleRoom] Arrow ${id} reached max distance`);
+        return;
+      }
+
+      // Controlla se è fuori dalla mappa
+      if (MapService.isOutOfBounds({ x: projectile.position.x, z: projectile.position.z })) {
+        projectilesToRemove.push(id);
+        console.debug(`[BattleRoom] Arrow ${id} out of bounds`);
+        return;
+      }
+
+      // Broadcast posizione aggiornata
+      // broadcast projectile position to clients (high-frequency)
+      this.broadcast('projectileUpdate', {
+        id: projectile.id,
+        position: projectile.position
+      });
+    });
+
+    // Rimuovi proiettili
+    projectilesToRemove.forEach(id => {
+      this.activeProjectiles.delete(id);
+      this.broadcast('projectileRemoved', { id });
+      console.debug(`[BattleRoom] Arrow ${id} removed`);
+    });
   }
 
   /**
@@ -291,14 +374,61 @@ export class BattleRoom extends Room<BattleState> {
   /**
    * Gestisce l'attacco del giocatore
    */
-  private handlePlayerAttack(client: Client, _message: { timestamp?: number }): void {
+    private handlePlayerAttack(client: Client): void {
     const player = this.state.players.get(client.sessionId);
     if (!player || !player.isAlive || !this.state.gameActive) {
       return;
     }
 
     const currentTime = Date.now();
-    // TODO: Usare _message.timestamp per lag compensation avanzata
+    
+    // Se è arco, crea proiettile
+    if (player.weaponType === WeaponType.BOW) {
+      const weapon = WEAPONS[WeaponType.BOW];
+      
+      // Verifica cooldown
+      if (currentTime - player.lastAttackTime < weapon.cooldown) {
+        return;
+      }
+      
+      player.lastAttackTime = currentTime;
+      player.isAttacking = true;
+      
+      // Crea proiettile
+      const projectileId = `arrow_${this.projectileCounter++}`;
+      const spawnDistance = 0.5;
+      
+      const projectile = {
+        id: projectileId,
+        ownerId: player.sessionId,
+        position: {
+          x: player.position.x + Math.sin(player.rotation) * spawnDistance,
+          y: 1,
+          z: player.position.z + Math.cos(player.rotation) * spawnDistance
+        },
+        direction: {
+          x: Math.sin(player.rotation),
+          z: Math.cos(player.rotation)
+        },
+        speed: weapon.projectileSpeed || 12,
+        damage: weapon.damage,
+        distanceTraveled: 0,
+        maxDistance: weapon.range
+      };
+      
+      this.activeProjectiles.set(projectileId, projectile);
+      
+      // Notifica tutti i client della creazione del proiettile
+      this.broadcast('projectileSpawned', {
+        id: projectileId,
+        position: projectile.position,
+        direction: projectile.direction
+      });
+      console.debug(`[BattleRoom] Arrow ${projectileId} spawned at (${projectile.position.x.toFixed(2)}, ${projectile.position.z.toFixed(2)})`);
+      return;
+    }
+
+    // Attacco melee - usa la logica esistente
     const attackResult = this.attackHandler.handleStandardAttack(
       player,
       this.state.players,
@@ -307,16 +437,46 @@ export class BattleRoom extends Room<BattleState> {
     );
 
     if (attackResult.projectile && attackResult.projectileId) {
-      // Arco - proiettile creato
-      this.broadcast('projectileCreated', {
-        projectileId: attackResult.projectileId,
+      // Arco - proiettile creato (usiamo flow message-based)
+      const proj = attackResult.projectile;
+
+      const projectileId = attackResult.projectileId;
+      // Inserisci nel record server-authoritative e broadcast
+      this.activeProjectiles.set(projectileId, {
+        id: projectileId,
         ownerId: player.sessionId,
         position: {
-          x: attackResult.projectile.position.x,
-          y: attackResult.projectile.position.y,
-          z: attackResult.projectile.position.z
+          x: proj.position.x,
+          y: proj.position.y,
+          z: proj.position.z
+        },
+        direction: {
+          x: proj.directionX || Math.sin(player.rotation),
+          z: proj.directionZ || Math.cos(player.rotation)
+        },
+        speed: proj.speed || (WEAPONS[WeaponType.BOW].projectileSpeed || 12),
+        damage: proj.damage || WEAPONS[WeaponType.BOW].damage,
+        distanceTraveled: proj.distanceTraveled || 0,
+        maxDistance: proj.range || WEAPONS[WeaponType.BOW].range
+      });
+
+      console.debug(`[BattleRoom] Projectile ${projectileId} created (message-based)`);
+
+      this.broadcast('projectileSpawned', {
+        id: projectileId,
+        position: {
+          x: proj.position.x,
+          y: proj.position.y,
+          z: proj.position.z
+        },
+        direction: {
+          x: proj.directionX || Math.sin(player.rotation),
+          z: proj.directionZ || Math.cos(player.rotation)
         }
       });
+
+      // Forza broadcast immediato per sincronizzare stato critico
+      this.needsCriticalBroadcast = true;
     } else if (attackResult.hitPlayers.length > 0) {
       // Mischia - giocatori colpiti
       attackResult.hitPlayers.forEach(targetId => {
@@ -330,9 +490,7 @@ export class BattleRoom extends Room<BattleState> {
             weaponType: player.weaponType
           });
 
-          console.log(
-            `[BattleRoom] Player ${target.name} hit by ${player.name} with ${player.weaponType}`
-          );
+          console.info(`[BattleRoom] Player ${target.name} hit by ${player.name} with ${player.weaponType}`);
 
           if (!target.isAlive) {
             this.broadcast('playerEliminated', {

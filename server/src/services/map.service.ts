@@ -25,10 +25,10 @@ export class MapService {
   /**
    * Verifica se una posizione è fuori dai confini della mappa circolare.
    */
-  static isOutOfBounds(position: Position): boolean {
-    const distanceFromCenter = Math.sqrt(
-      position.x ** 2 + position.z ** 2
-    );
+  static isOutOfBounds(position: { x: number; z: number } | Position): boolean {
+    const px = (position as any).x || 0;
+    const pz = (position as any).z || 0;
+    const distanceFromCenter = Math.sqrt(px ** 2 + pz ** 2);
     return distanceFromCenter > GAME_CONFIG.MAP_RADIUS;
   }
 

@@ -2,8 +2,7 @@ import { Schema, type } from '@colyseus/schema';
 import { Position } from './Position.schema';
 
 /**
- * Schema per i proiettili (frecce, lance).
- * Deve corrispondere esattamente allo schema del server.
+ * Schema per un proiettile (freccia dell'arco)
  */
 export class Projectile extends Schema {
   @type('string') id: string = '';

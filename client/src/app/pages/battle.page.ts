@@ -9,6 +9,7 @@ import { CameraService } from '../services/camera.service';
 import { WeaponHandlerFactory } from '../weapons/WeaponHandlerFactory';
 import { InterpolationService } from '../services/interpolation.service';
 import { NetworkMetricsService, NetworkStats } from '../services/network-metrics.service';
+import { BattleState } from '../schemas/BattleState.schema';
 import * as THREE from 'three';
 
 @Component({
@@ -179,6 +180,36 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
 
     // Setup controlli tastiera usando InputService
     this.inputService.setupKeyboardControls(() => this.attack());
+
+    // Handler per proiettili - NUOVO approccio message-based
+    room.onMessage('projectileSpawned', (data: { id: string; position: { x: number; y: number; z: number }; direction: { x: number; z: number } }) => {
+      console.log(`[BattlePage] Projectile spawned: ${data.id}`);
+      if (this.scene) {
+        this.sceneService.updateProjectile(
+          data.id,
+          data.position,
+          this.scene,
+          data.direction
+        );
+      }
+    });
+
+    room.onMessage('projectileUpdate', (data: { id: string; position: { x: number; y: number; z: number } }) => {
+      if (this.scene) {
+        this.sceneService.updateProjectile(
+          data.id,
+          data.position,
+          this.scene
+        );
+      }
+    });
+
+    room.onMessage('projectileRemoved', (data: { id: string }) => {
+      console.log(`[BattlePage] Projectile removed: ${data.id}`);
+      if (this.scene) {
+        this.sceneService.removeProjectile(data.id, this.scene);
+      }
+    });
     
     // Setup debug overlay toggle con CTRL + D
     window.addEventListener('keydown', (e) => {
@@ -203,8 +234,8 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
       // Invia messaggio ping e attendi pong
       room.send('ping', { timestamp: pingStartTime });
       
-      // Ascolta pong (solo una volta per questo ping)
-      const pongListener = room.onMessage.once('pong', (data: { timestamp: number }) => {
+      // Ascolta pong
+      room.onMessage('pong', (data: { timestamp: number }) => {
         const pingTime = Date.now() - data.timestamp;
         this.networkMetrics.recordPing(pingTime);
       });
@@ -382,7 +413,7 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
       // Modalità normale, segui il player
       this.cameraService.updateThirdPersonCamera(this.camera, this.myPlayer);
     }
-    
+
     // Aggiorna statistiche per debug overlay
     if (this.showDebugOverlay) {
       this.networkStats = this.networkMetrics.getStats();
@@ -445,6 +476,10 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
     }
     if (this.renderer) {
       this.sceneService.disposeRenderer(this.renderer);
+    }
+    // Pulisci tutti i proiettili
+    if (this.scene) {
+      this.sceneService.clearAllProjectiles(this.scene);
     }
     this.inputService.cleanup();
     WeaponHandlerFactory.cleanup();
