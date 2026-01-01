@@ -148,12 +148,41 @@ export class PlayerMeshService {
       weapon.rotation.y = -Math.PI / 2; // Punta in avanti (-90 gradi)
       weapon.rotation.x = Math.PI; // Flip di 180 gradi
     } else {
-      // BOW
-      const bowGeometry = new THREE.BoxGeometry(0.1, 0.8, 0.3);
-      bowGeometry.translate(0, 0.4, 0);
-      const bowMaterial = new THREE.MeshStandardMaterial({ color: 0x5d4037 });
-      weapon = new THREE.Mesh(bowGeometry, bowMaterial);
+      // BOW - Arco curvo con filo
+      weapon = new THREE.Mesh();
+      
+      // 1. Arco curvo (cilindro marrone piegato)
+      const bowCurve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(0, 0, 0),      // Base in basso
+        new THREE.Vector3(0.15, 0.3, 0), // Curva esterna
+        new THREE.Vector3(0.15, 0.6, 0), // Curva esterna
+        new THREE.Vector3(0, 0.9, 0)     // Punta in alto
+      ]);
+      
+      const bowGeometry = new THREE.TubeGeometry(bowCurve, 20, 0.04, 8, false);
+      const bowMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x5d4037, // Marrone scuro (legno)
+        roughness: 0.8 
+      });
+      const bowMesh = new THREE.Mesh(bowGeometry, bowMaterial);
+      bowMesh.castShadow = true;
+      weapon.add(bowMesh);
+      
+      // 2. Filo grigio (linea sottile che congiunge le estremità)
+      const stringGeometry = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, 0, 0),   // Base
+        new THREE.Vector3(0, 0.9, 0)  // Punta
+      ]);
+      const stringMaterial = new THREE.LineBasicMaterial({ 
+        color: 0x888888, // Grigio
+        linewidth: 1 
+      });
+      const bowString = new THREE.Line(stringGeometry, stringMaterial);
+      weapon.add(bowString);
+      
+      // Posizione idle: a lato del personaggio, perpendicolare (come spada/lancia)
       weapon.position.set(0.6, 0.3, 0);
+      weapon.rotation.z = 0; // Verticale
     }
     weapon.castShadow = true;
     group.add(weapon);
@@ -533,6 +562,82 @@ export class PlayerMeshService {
 
     animate();
     return thrustDuration;
+  }
+
+  /**
+   * Anima il tiro con l'arco.
+   * L'arco si sposta al centro e davanti al personaggio, ruota parallelamente al corpo.
+   * @param onShoot callback chiamato quando il proiettile deve essere sparato
+   */
+  playBowShot(
+    playerMesh: PlayerMesh,
+    onShoot?: () => void
+  ): number {
+    if (playerMesh.weaponType !== 'BOW' || !playerMesh.weapon || playerMesh.isSwinging) {
+      return 0;
+    }
+
+    playerMesh.isSwinging = true;
+    const weapon = playerMesh.weapon;
+
+    // Salva posizione e rotazione iniziali
+    const startPositionX = weapon.position.x;
+    const startPositionY = weapon.position.y;
+    const startPositionZ = weapon.position.z;
+    const startRotationY = weapon.rotation.y;
+    const startRotationZ = weapon.rotation.z;
+
+    // Parametri animazione
+    const drawDuration = 250; // ms - fase di caricamento
+    const releaseDuration = 150; // ms - fase di rilascio
+    const totalDuration = drawDuration + releaseDuration;
+    const startTime = Date.now();
+
+    const animate = () => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(elapsed / totalDuration, 1);
+
+      if (progress < drawDuration / totalDuration) {
+        // FASE 1: Caricamento (draw) - sposta al centro e davanti
+        const drawProgress = (elapsed / drawDuration);
+        const easeProgress = 1 - Math.pow(1 - drawProgress, 2); // ease-out
+
+        // Rotazione: da verticale (0°) a orizzontale parallela al corpo (-90°)
+        weapon.rotation.z = startRotationZ - (easeProgress * Math.PI / 2);
+        
+        // Posizione: dal lato (0.6, 0.3, 0) al centro davanti (0, 1.2, 0.3)
+        weapon.position.x = startPositionX - (easeProgress * 0.6); // Al centro
+        weapon.position.y = startPositionY + (easeProgress * 0.9); // Più in alto
+        weapon.position.z = startPositionZ + (easeProgress * 0.3); // Davanti
+      } else {
+        // FASE 2: Rilascio (release)
+        const releaseProgress = (elapsed - drawDuration) / releaseDuration;
+        
+        // Piccolo movimento in avanti al rilascio
+        weapon.position.z = startPositionZ + 0.3 + (releaseProgress * 0.1);
+        
+        // Callback per sparare il proiettile a metà del rilascio
+        if (releaseProgress > 0.3 && releaseProgress < 0.5 && onShoot) {
+          onShoot();
+          onShoot = undefined; // Spara solo una volta
+        }
+      }
+
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      } else {
+        // Reset finale
+        weapon.position.x = startPositionX;
+        weapon.position.y = startPositionY;
+        weapon.position.z = startPositionZ;
+        weapon.rotation.y = startRotationY;
+        weapon.rotation.z = startRotationZ;
+        playerMesh.isSwinging = false;
+      }
+    };
+
+    animate();
+    return totalDuration;
   }
 
   /**

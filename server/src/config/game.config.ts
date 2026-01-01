@@ -15,6 +15,7 @@ export interface WeaponConfig {
   damage: number;
   range: number;
   cooldown: number; // in millisecondi
+  projectileSpeed?: number; // unità al secondo per armi ranged
 }
 
 export const WEAPONS: Record<WeaponType, WeaponConfig> = {
@@ -36,8 +37,9 @@ export const WEAPONS: Record<WeaponType, WeaponConfig> = {
     type: WeaponType.BOW,
     name: 'Arco',
     damage: 7,
-    range: 6,
-    cooldown: 1000
+    range: 6, // distanza massima in metri
+    cooldown: 1000,
+    projectileSpeed: 1.714 // 6 metri in 3.5 secondi
   }
 };
 

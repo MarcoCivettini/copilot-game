@@ -1,4 +1,4 @@
-import { Player, Projectile } from '../schemas/BattleState';
+import { Player, Projectile, Position } from '../schemas/BattleState';
 import { WEAPONS, WeaponType } from '../config/game.config';
 import { MapService } from './map.service';
 import { CombatService } from './combat.service';
@@ -6,6 +6,9 @@ import { CombatService } from './combat.service';
 /**
  * Service per la gestione dei proiettili.
  * Gestisce creazione, aggiornamento e collisioni dei proiettili.
+ *
+ * NOTE: This service is deprecated in favor of message-based projectile handling
+ * implemented in BattleRoom (activeProjectiles). Keep for backwards compatibility.
  */
 export class ProjectileService {
   /**
@@ -39,6 +42,9 @@ export class ProjectileService {
     // Direzione basata sulla rotazione del giocatore
     projectile.directionX = Math.sin(shooter.rotation);
     projectile.directionZ = Math.cos(shooter.rotation);
+    projectile.damage = weapon.damage;
+    // Velocità del proiettile (unità/sec) - usa valore in config se presente
+    projectile.speed = (weapon as any).projectileSpeed ?? 10;
 
     projectile.damage = weapon.damage;
     projectile.range = weapon.range;
@@ -54,8 +60,14 @@ export class ProjectileService {
   static updateProjectile(projectile: Projectile, deltaTime: number): boolean {
     const distance = projectile.speed * deltaTime;
 
-    projectile.position.x += projectile.directionX * distance;
-    projectile.position.z += projectile.directionZ * distance;
+    // IMPORTANTE: Dobbiamo creare un NUOVO oggetto Position per forzare Colyseus a rilevare il cambiamento
+    // Modificare le proprietà direttamente (x, y, z) NON funziona con oggetti nested in Colyseus
+    const newPos = new Position();
+    newPos.x = projectile.position.x + (projectile.directionX * distance);
+    newPos.y = projectile.position.y;
+    newPos.z = projectile.position.z + (projectile.directionZ * distance);
+    projectile.position = newPos;
+
     projectile.distanceTraveled += distance;
 
     // Rimuovi se ha superato il range
@@ -104,6 +116,7 @@ export class ProjectileService {
     players: Map<string, Player>,
     deltaTime: number
   ): { toRemove: string[]; hits: Array<{ projectileId: string; playerId: string; damage: number }> } {
+    // deltaTime è già in secondi (viene passato come deltaTime / 1000 dal caller)
     const toRemove: string[] = [];
     const hits: Array<{ projectileId: string; playerId: string; damage: number }> = [];
 

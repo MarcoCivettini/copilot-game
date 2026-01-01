@@ -8,6 +8,7 @@ import * as THREE from 'three';
 @Injectable({ providedIn: 'root' })
 export class ThreeJsSceneService {
   private readonly MAP_RADIUS = 30;
+  private projectileMeshes = new Map<string, THREE.Object3D>();
 
   /**
    * Inizializza la scena ThreeJS completa.
@@ -110,5 +111,113 @@ export class ThreeJsSceneService {
    */
   disposeRenderer(renderer: THREE.WebGLRenderer): void {
     renderer.dispose();
+  }
+
+  /**
+   * Crea o aggiorna un proiettile nella scena.
+   */
+  updateProjectile(
+    projectileId: string,
+    position: { x: number; y: number; z: number },
+    scene: THREE.Scene,
+    direction?: { x: number; z: number }
+  ): void {
+    let projectileObj = this.projectileMeshes.get(projectileId);
+
+    if (!projectileObj) {
+      // Crea nuovo proiettile come freccia composta (shaft + head)
+      const arrowGroup = new THREE.Group();
+
+      // Shaft - cilindro sottile (legno)
+      const shaftLength = 0.6;
+      const shaftRadius = 0.03;
+      const shaftGeom = new THREE.CylinderGeometry(shaftRadius, shaftRadius, shaftLength, 8);
+      const shaftMat = new THREE.MeshStandardMaterial({ color: 0x8b5a2b });
+      const shaft = new THREE.Mesh(shaftGeom, shaftMat);
+      shaft.castShadow = true;
+      // Orienta il cilindro lungo l'asse Z (default cilindro lungo Y)
+      shaft.rotation.x = Math.PI / 2;
+
+      // Head - punta conica
+      const headGeom = new THREE.ConeGeometry(0.06, 0.16, 8);
+      const headMat = new THREE.MeshStandardMaterial({ color: 0x333333, metalness: 0.2 });
+      const head = new THREE.Mesh(headGeom, headMat);
+      head.castShadow = true;
+      // Posiziona la punta all'estremità frontale dello shaft
+      head.position.z = shaftLength / 2 + 0.08;
+      head.rotation.x = Math.PI / 2;
+
+      // Optional: piccole piume (semplice box) sul retro
+      const featherGeom = new THREE.BoxGeometry(0.06, 0.02, 0.12);
+      const featherMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+      const feather = new THREE.Mesh(featherGeom, featherMat);
+      feather.position.z = -shaftLength / 2 - 0.04;
+      feather.rotation.x = Math.PI / 2;
+
+      arrowGroup.add(shaft);
+      arrowGroup.add(head);
+      arrowGroup.add(feather);
+
+      // Scala complessiva: diametro totale ~0.12 -> compatibile con 0.3 diameter target
+      arrowGroup.scale.set(0.5, 0.5, 0.5);
+
+      projectileObj = arrowGroup;
+      this.projectileMeshes.set(projectileId, projectileObj);
+      scene.add(projectileObj);
+    }
+
+    // Aggiorna posizione
+    projectileObj.position.set(position.x, position.y, position.z);
+
+    // Orienta la freccia sulla base della direzione X/Z (server usa sin(rotation), cos(rotation))
+    if (direction && (direction.x !== 0 || direction.z !== 0)) {
+      const angleY = Math.atan2(direction.x, direction.z); // dx, dz -> rotation attorno a Y
+      projectileObj.rotation.set(0, angleY, 0);
+    }
+  }
+
+  /**
+   * Rimuove un proiettile dalla scena.
+   */
+  removeProjectile(projectileId: string, scene: THREE.Scene): void {
+    const projectileObj = this.projectileMeshes.get(projectileId);
+    if (projectileObj) {
+      // Rimuovi dall'albero
+      scene.remove(projectileObj);
+
+      // Dispose ricorsivo dei figli che siano mesh
+      projectileObj.traverse((child) => {
+        if ((child as THREE.Mesh).geometry) {
+          try {
+            (child as THREE.Mesh).geometry.dispose();
+          } catch (e) {
+            // ignore
+          }
+        }
+        if ((child as THREE.Mesh).material) {
+          const mat = (child as THREE.Mesh).material;
+          if (Array.isArray(mat)) {
+            mat.forEach(m => m.dispose());
+          } else {
+            try {
+              (mat as THREE.Material).dispose();
+            } catch (e) {
+              // ignore
+            }
+          }
+        }
+      });
+
+      this.projectileMeshes.delete(projectileId);
+    }
+  }
+
+  /**
+   * Rimuove tutti i proiettili dalla scena.
+   */
+  clearAllProjectiles(scene: THREE.Scene): void {
+    this.projectileMeshes.forEach((mesh, id) => {
+      this.removeProjectile(id, scene);
+    });
   }
 }

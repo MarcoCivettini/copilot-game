@@ -36,7 +36,7 @@ export class WeaponHandlerFactory {
 
       case 'BOW':
         if (!this.bowHandler) {
-          this.bowHandler = new BowHandler();
+          this.bowHandler = new BowHandler(playerMeshService);
         }
         return this.bowHandler;
 

@@ -1,7 +1,6 @@
 import { Player, Projectile } from '../schemas/BattleState';
 import { IWeaponStrategy } from './IWeaponStrategy';
 import { WEAPONS, WeaponType } from '../config/game.config';
-import { ProjectileService } from '../services/projectile.service';
 
 /**
  * Strategia per armi a distanza (Arco).
@@ -42,12 +41,28 @@ export class RangedWeaponStrategy implements IWeaponStrategy {
     }
 
     const projectileId = `projectile_${this.projectileCounter++}`;
-    const projectile = ProjectileService.createProjectile(shooter, projectileId, currentTime);
+    const weapon = WEAPONS[WeaponType.BOW];
 
-    if (projectile) {
-      projectiles.set(projectileId, projectile);
-    }
+    shooter.lastAttackTime = currentTime;
+    shooter.isAttacking = true;
 
+    const projectile = new Projectile();
+    projectile.id = projectileId;
+    projectile.ownerId = shooter.sessionId;
+
+    const spawnDistance = 0.5;
+    projectile.position.x = shooter.position.x + Math.sin(shooter.rotation) * spawnDistance;
+    projectile.position.y = 1;
+    projectile.position.z = shooter.position.z + Math.cos(shooter.rotation) * spawnDistance;
+
+    projectile.directionX = Math.sin(shooter.rotation);
+    projectile.directionZ = Math.cos(shooter.rotation);
+    projectile.speed = (weapon as any).projectileSpeed ?? 1.714;
+    projectile.damage = weapon.damage;
+    projectile.range = weapon.range;
+    projectile.distanceTraveled = 0;
+
+    projectiles.set(projectileId, projectile);
     return projectile;
   }
 }
