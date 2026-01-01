@@ -13,7 +13,8 @@
         <span class="player-number">{{ i + 1 }}.</span>
         <span class="player-name">{{ player.name }}</span>
         <div class="weapon-display">
-          <img [src]="getWeaponImage(player.weaponType)" [alt]="player.weaponType" class="weapon-icon" />
+          <img [src]="getWeaponImage(player.weaponType)" [alt]="player.weaponType" class="weapon-icon" 
+               (error)="onImageError($event, player.weaponType)" />
           <span class="weapon-label">{{ player.weaponType }}</span>
         </div>
         <span class="ready-badge" *ngIf="player.isReady">✓</span>

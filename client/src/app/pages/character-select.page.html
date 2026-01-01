@@ -5,19 +5,22 @@
     <div class="weapon-select">
       <div class="weapon-option" [class.selected]="weapon === 'sword'" (click)="selectWeapon('sword')">
         <div class="weapon-image-box">
-          <img src="https://github.com/user-attachments/assets/3d49359d-7017-4c55-86db-7381f09c64ae" alt="Spada" />
+          <img src="assets/weapons/sword.png" alt="Spada" 
+               onerror="this.src='https://github.com/user-attachments/assets/3d49359d-7017-4c55-86db-7381f09c64ae'" />
         </div>
         <span class="weapon-name">Spada</span>
       </div>
       <div class="weapon-option" [class.selected]="weapon === 'spear'" (click)="selectWeapon('spear')">
         <div class="weapon-image-box">
-          <img src="https://github.com/user-attachments/assets/55c83087-4998-46d4-9dae-9d0949bd0f06" alt="Lancia" />
+          <img src="assets/weapons/spear.png" alt="Lancia" 
+               onerror="this.src='https://github.com/user-attachments/assets/55c83087-4998-46d4-9dae-9d0949bd0f06'" />
         </div>
         <span class="weapon-name">Lancia</span>
       </div>
       <div class="weapon-option" [class.selected]="weapon === 'bow'" (click)="selectWeapon('bow')">
         <div class="weapon-image-box">
-          <img src="https://github.com/user-attachments/assets/530aed88-41b0-415e-87a3-d98a88d446a5" alt="Arco" />
+          <img src="assets/weapons/bow.png" alt="Arco" 
+               onerror="this.src='https://github.com/user-attachments/assets/530aed88-41b0-415e-87a3-d98a88d446a5'" />
         </div>
         <span class="weapon-name">Arco</span>
       </div>
