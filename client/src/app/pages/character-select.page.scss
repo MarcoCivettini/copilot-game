@@ -24,7 +24,54 @@ input[type="text"] {
   display: flex;
   gap: 1rem;
   margin-bottom: 1rem;
+  justify-content: center;
 }
+
+.weapon-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+
+  &:hover {
+    transform: translateY(-5px);
+  }
+}
+
+.weapon-image-box {
+  width: 100px;
+  height: 100px;
+  border: 3px solid #888;
+  border-radius: 8px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+  margin-bottom: 0.5rem;
+
+  img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+}
+
+.weapon-option.selected .weapon-image-box {
+  border-color: #2196F3;
+  background: rgba(33, 150, 243, 0.2);
+  box-shadow: 0 0 15px rgba(33, 150, 243, 0.5);
+}
+
+.weapon-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #fff;
+  text-align: center;
+}
+
 button {
   background: #4caf50;
   color: #fff;
@@ -33,6 +80,8 @@ button {
   border-radius: 0.5rem;
   cursor: pointer;
   font-size: 1.1rem;
+  width: 100%;
+  margin-top: 1rem;
 }
 .error {
   color: #ff5252;

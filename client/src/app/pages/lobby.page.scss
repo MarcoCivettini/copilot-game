@@ -87,6 +87,27 @@ h2 {
   font-weight: 600;
 }
 
+.weapon-display {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.8rem;
+  border-radius: 0.3rem;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.weapon-icon {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+}
+
+.weapon-label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #fff;
+}
+
 .weapon {
   padding: 0.3rem 0.8rem;
   border-radius: 0.3rem;

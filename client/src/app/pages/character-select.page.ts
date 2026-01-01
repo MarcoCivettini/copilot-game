@@ -18,6 +18,10 @@ export class CharacterSelectPage {
 
   constructor(private colyseus: ColyseusService, private router: Router) {}
 
+  selectWeapon(weapon: 'sword' | 'spear' | 'bow') {
+    this.weapon = weapon;
+  }
+
   async joinLobby() {
     if (!this.playerName.trim()) {
       this.error = 'Inserisci un nome valido';
