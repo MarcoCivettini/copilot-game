@@ -1,4 +1,12 @@
 <div class="battle-container">
+  <!-- Countdown overlay -->
+  <div class="countdown-overlay" *ngIf="isCountdownActive">
+    <div class="countdown-content">
+      <h1 class="countdown-number" *ngIf="countdownValue > 0">{{ countdownValue }}</h1>
+      <h1 class="countdown-start" *ngIf="countdownValue === 0">Via!</h1>
+    </div>
+  </div>
+
   <!-- HUD overlay -->
   <div class="hud-overlay" *ngIf="!isGameOver">
     <div class="hud-top">
