@@ -357,8 +357,13 @@ export class BattleRoom extends Room<BattleState> {
    * Gestisce il movimento del giocatore
    */
   private handlePlayerMove(client: Client, input: PlayerInput): void {
+    // Blocca movimento se gioco non attivo (durante countdown)
+    if (!this.state.gameActive) {
+      return;
+    }
+    
     const player = this.state.players.get(client.sessionId);
-    if (!player || !player.isAlive || !this.state.gameActive) {
+    if (!player || !player.isAlive) {
       return;
     }
 
@@ -375,8 +380,13 @@ export class BattleRoom extends Room<BattleState> {
    * Gestisce l'attacco del giocatore
    */
     private handlePlayerAttack(client: Client): void {
+    // Blocca attacchi se gioco non attivo (durante countdown)
+    if (!this.state.gameActive) {
+      return;
+    }
+    
     const player = this.state.players.get(client.sessionId);
-    if (!player || !player.isAlive || !this.state.gameActive) {
+    if (!player || !player.isAlive) {
       return;
     }
 
@@ -521,8 +531,13 @@ export class BattleRoom extends Room<BattleState> {
       attackTimestamp?: number;
     }
   ): void {
+    // Blocca weaponSwing se gioco non attivo (durante countdown)
+    if (!this.state.gameActive) {
+      return;
+    }
+    
     const player = this.state.players.get(client.sessionId);
-    if (!player || !player.isAlive || !this.state.gameActive) {
+    if (!player || !player.isAlive) {
       return;
     }
 
@@ -584,14 +599,19 @@ export class BattleRoom extends Room<BattleState> {
    */
   private startCountdown(): void {
     this.state.countdown = GAME_CONFIG.COUNTDOWN_DURATION;
+    this.state.gameStartTime = Date.now() + (GAME_CONFIG.COUNTDOWN_DURATION * 1000);
 
     this.clock.setInterval(() => {
       this.state.countdown--;
+      
+      // Invia messaggio countdown a tutti i client
+      this.broadcast('countdown', { value: this.state.countdown });
+      console.log(`[BattleRoom] Countdown: ${this.state.countdown}`);
 
       if (this.state.countdown <= 0) {
         this.clock.clear();
         this.state.gameActive = true;
-        this.broadcast('gameStarted', { message: 'La partita è iniziata!' });
+        this.broadcast('gameStart', { message: 'La partita è iniziata!' });
         console.log('[BattleRoom] Game started!');
       }
     }, 1000);

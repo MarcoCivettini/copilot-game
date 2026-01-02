@@ -32,6 +32,9 @@ export class InputService {
   private readonly MAP_RADIUS = 30;
   private readonly ROTATION_SMOOTH_FACTOR = 0.12;
 
+  // Controllo per abilitare/disabilitare input
+  private enabled: boolean = true;
+
   // Rendo keys pubblico per accesso dallo spettatore
   public keys: KeysState = {
     w: false,
@@ -67,6 +70,11 @@ export class InputService {
    * Gestisce evento keydown.
    */
   private handleKeyDown(e: KeyboardEvent, onAttack: () => void): void {
+    // Non processare input se disabilitato
+    if (!this.enabled) {
+      return;
+    }
+    
     const key = e.key.toLowerCase();
     
     if (key === 'w') this.keys.w = true;
@@ -101,7 +109,10 @@ export class InputService {
     playerMesh: THREE.Group,
     room: Room | undefined
   ): number | null {
-    if (!room) return null;
+    // Non processare movimento se disabilitato o senza room
+    if (!this.enabled || !room) {
+      return null;
+    }
 
     let moved = false;
     const oldPosition = playerMesh.position.clone();
@@ -285,6 +296,28 @@ export class InputService {
     }
 
     return delta;
+  }
+
+  /**
+   * Abilita l'input service
+   */
+  enable(): void {
+    this.enabled = true;
+  }
+
+  /**
+   * Disabilita l'input service
+   */
+  disable(): void {
+    this.enabled = false;
+    // Reset tutti i tasti quando disabilitato
+    this.keys = {
+      w: false,
+      a: false,
+      s: false,
+      d: false,
+      space: false
+    };
   }
 
   /**

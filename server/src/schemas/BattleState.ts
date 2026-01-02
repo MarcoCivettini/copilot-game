@@ -59,6 +59,7 @@ export class BattleState extends Schema {
   @type({ map: Player }) players = new MapSchema<Player>();
   @type({ map: Projectile }) projectiles = new MapSchema<Projectile>();
   @type('number') countdown: number = 5;
+  @type('number') gameStartTime: number = 0;
   @type('boolean') gameActive: boolean = false;
   @type('boolean') gameEnded: boolean = false;
   @type('string') winnerId: string = '';

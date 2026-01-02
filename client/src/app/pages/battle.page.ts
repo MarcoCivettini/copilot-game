@@ -29,6 +29,10 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
   isDead = false; // Il giocatore è morto
   hasWon = false; // Il giocatore ha vinto
 
+  // Countdown
+  countdownValue: number = 5;
+  isCountdownActive: boolean = true;
+
   // HUD data
   myHealth = 10;
   myMaxHealth = 10;
@@ -181,6 +185,20 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
     // Setup controlli tastiera usando InputService
     this.inputService.setupKeyboardControls(() => this.attack());
 
+    // Ascolta messaggi countdown
+    room.onMessage('countdown', (data: { value: number }) => {
+      console.log('[BattlePage] Countdown:', data.value);
+      this.countdownValue = data.value;
+    });
+
+    // Ascolta messaggio gameStart
+    room.onMessage('gameStart', (data: { message: string }) => {
+      console.log('[BattlePage] Game started:', data.message);
+      this.isCountdownActive = false;
+      this.inputService.enable();
+      this.removeGrayscaleEffect();
+    });
+
     // Handler per proiettili - NUOVO approccio message-based
     room.onMessage('projectileSpawned', (data: { id: string; position: { x: number; y: number; z: number }; direction: { x: number; z: number } }) => {
       console.log(`[BattlePage] Projectile spawned: ${data.id}`);
@@ -251,6 +269,10 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
     this.scene = sceneSetup.scene;
     this.camera = sceneSetup.camera;
     this.renderer = sceneSetup.renderer;
+
+    // Disabilita input durante countdown
+    this.inputService.disable();
+    this.applyGrayscaleEffect(true);
 
     this.animate();
   }
@@ -468,6 +490,13 @@ export class BattlePage implements OnInit, AfterViewInit, OnDestroy {
         canvas.style.filter = 'none';
       }
     }
+  }
+
+  /**
+   * Rimuove l'effetto scala di grigi dal canvas.
+   */
+  private removeGrayscaleEffect(): void {
+    this.applyGrayscaleEffect(false);
   }
 
   ngOnDestroy() {
